@@ -136,6 +136,14 @@ ccc stuff that got back from VEG_COM, maybe should be relocated to Ent
 
 !@var soil_surf_moist near surf soil moisture (kg/m^3) for subdd
       real*8, ALLOCATABLE, dimension(:,:) :: soil_surf_moist
+
+#ifdef GCAP
+!@var Surface roughness height for diagnostics      
+      REAL*8, allocatable, dimension(:,:) :: z0m_save
+!@var LAI for diagnostics
+      REAL*8, allocatable, dimension(:,:) :: lai_save
+#endif
+
       END MODULE GHY_COM
 
       SUBROUTINE ALLOC_GHY_COM(grid)
@@ -260,6 +268,13 @@ C**** Initialize to zero
       ALLOCATE( soil_surf_moist(I_0H:I_1H,J_0H:J_1H) )
       soil_surf_moist(:,:) = 0.d0
 
+#ifdef GCAP
+      ALLOCATE( z0m_save(I_0H:I_1H,J_0H:J_1H) )
+      z0m_save = 0d0
+      ALLOCATE( lai_save(I_0H:I_1H,J_0H:J_1H) )
+      lai_save = 0d0
+#endif
+      
       END SUBROUTINE ALLOC_GHY_COM
 
       subroutine read_landsurf_ic

@@ -24,6 +24,7 @@ module CLOUDS
        ,mb2kg
   use RESOLUTION, only : lm
   USE ATM_COM, only : pdsigl00
+  USE GEOM, only : DXYP
   use MODEL_COM, only : dtsrc,itime  ! ,coupled_chem
   use TimeConstants_mod, only: SECONDS_PER_HOUR
   use CLOUDS_COM, only : ncol
@@ -238,6 +239,9 @@ module CLOUDS
 !@var CLDSSL large-scale cloud cover
 !@var SM,QM Vertical profiles of (T/p**kappa)*AIRM, q*AIRM
   real*8, dimension(LM) :: SSHR,DCTEI,TAUSSL,CLDSSL,TAUSSLIP
+#ifdef GCAP
+  real*8, dimension(LM) :: TAUSSL3D,CLDSSL3D
+#endif
   real*8, dimension(LM) :: SM,QM
   real*8, dimension(NMOM,LM) :: SMOM,QMOM,SMOMMC,QMOMMC, SMOMLS,QMOMLS
 
@@ -402,6 +406,30 @@ module CLOUDS
       REAL*8 reffp_cosp(LM)
 !@var ccp_cosp Mixing ratio of convective precipitation [kg/kg]
       REAL*8 ccp_cosp(LM+1)
+#endif
+#ifdef GCAP
+  real*8 mc_up_mf(LM+1,2),  & ! Plume updraft mass flux along edge (kg/m2/s)
+         mc_dd_mf(LM+1,2),  & ! Plume downdraft mass flux alonge edge (kg/m2/s)
+         mc_up_ent(LM,2),   & ! Plume updraft entrainment flux (kg/m2/s)
+         mc_up_det(LM,2),   & ! Plume updraft detrainment flux (kg/m2/s)
+         mc_dd_ent(LM,2),   & ! Plume downdraft entrainment flux (kg/m2/s)
+         mc_dd_det(LM,2),   & ! Plume downdraft detrainment flux (kg/m2/s)
+         mc_dqcond(LM,2),   & ! Moist convection condensation rate (kg H2O/kg dry air in cell/s)
+         mc_dqevap(LM,2),   & ! Moist convection evaporation rate (kg H2O/kg dry air in cell/s)
+         ls_dqcond(LM),     & ! Large-scale condensation rate (kg H2O/kg dry air in cell/s)
+         ls_dqevap(LM),     & ! Large-scale evaporation rate (kg H2O/kg dry air in cell/s)
+         mc_pflx_i(LM+1),   & ! Moist convection liquid precip flux along edge (kg/m2/s)
+         mc_pflx_l(LM+1),   & ! Moist convection ice precip flux along edge (kg/m2/s)
+         ls_pflx_i(LM+1),   & ! Large-scale liquid precip flux along edge (kg/m2/s)
+         ls_pflx_l(LM+1)      ! Large-scale ice precip flux along edge (kg/m2/s)
+  integer mc_counts(LM,2,6), mc_plumes ! Counts to make sure we're not missing anything
+  ! 1 = updraft mass flux
+  ! 2 = updraft entrain
+  ! 3 = updraft detrain
+  ! 4 = downdraft mass flux
+  ! 5 = downdraft entrain
+  ! 6 = downdraft detrain
+  real*8 :: dZ(LM), dZm(LM+1)
 #endif
 #endif
 
@@ -581,7 +609,7 @@ contains
          CDHM,CDHSUM,CLDM,CLDREF,CDHSUM1,CONTCE,CDHDRT,CONDMU, &
          !
          DCW,DCG,DCI,DWCU,DMSE,DFP,DQSUM,DMMIX,DQ,DMSE1,DQSUM1, &
-         DDRAFT,DELTA,DQEVP,DDRUP,DDROLD, &
+         DDRAFT,DELTA,DQEVP,DDRUP,DDROLD, DP, &
          EPLUME,ETADN,ETAL1,EVPSUM,EDRAFT, &
          !
          FLAMW,FLAMG,FLAMI,FG,FI,FMC1,FCLW, &
@@ -604,6 +632,10 @@ contains
          TADJ,TEMWM,TEM,TIG,TNX1,TP,TVP,TOLD,TOLD1,TTURB,TRATIO, &
          UMTEMP,VMTEMP,VT, &
          WMDN,WMUP,WMEDG,WMIX,W2TEM,WTEM,WCONST,WCUFRZ,WORK,WMAX,WV
+#ifdef GCAP
+    real*8, dimension(LM)   :: bykg
+    real*8                  :: ccm_ref, kg_plume
+#endif
     !
     !
     !            *********   SCALAR DEFINITIONS   *********
@@ -886,7 +918,38 @@ contains
     ccp_cosp(:) = 0.
     ccl_cosp(:) = 0.
 #endif
+#ifdef GCAP
+    ! Reset arrays that track the convective mass fluxes
+    mc_up_mf(:,:)  = 0d0
+    mc_dd_mf(:,:)  = 0d0
+    mc_up_ent(:,:) = 0d0
+    mc_up_det(:,:) = 0d0
+    mc_dd_ent(:,:) = 0d0
+    mc_dd_det(:,:) = 0d0
+    mc_counts(:,:,:) = 0
+    mc_plumes        = 0
+    ! Reset arrays that track the condensation/evaporation fluxes
+    mc_dqcond(:,:) = 0d0
+    mc_dqevap(:,:) = 0d0
+    mc_pflx_l(:) = 0d0
+    mc_pflx_i(:) = 0d0     
+    ! Calculate layer thickness [m] with hypsometric equation
+    DO L=1,LM
+    dZ(L) = rgas * TL(L) * bygrav * log(ple(L)/ple(L+1))
+    ENDDO
+    ! Calculate distance layer midpoints [m] (with special treatment at surface) for
+    ! precipitation flux calculation
+    dZm(1) = 0.5 * dZ(1)
+    DO L=2,LM+1
+    dZm(L) = 0.5 * ( dZm(L-1) + dZm(L) )
+    ENDDO 
+    ! Calculate inverse mass in each layer (1/kg)
+    DO L=1,LM
+    bykg(L) = grav / ( 100. * ( ple(L) - ple(L+1) ) * DXYP(j_debug) )
+    ENDDO
 #endif
+#endif
+
 !**** SAVE ORIG PROFILES
     SMOLD(:) = SM(:)
     SMOMOLD(:,:) = SMOM(:,:)
@@ -1063,6 +1126,12 @@ AREA_PARTITION: do NPPL=1,2
           If (NPPL==2 .and. (.not.MC1 .or. MCCONT.lt.2))  Cycle AREA_PARTITION
           !**** Convection rose 2 or more layers for first AREA PARTITION
 
+#ifdef GCAP
+            ! Reset aggregators
+            mc_dqevap(:,IC) = 0.
+            mc_dqcond(:,IC) = 0.
+#endif
+
 #ifdef TRACERS_ON
             If (NPPL==2) then
               call reset_tracer_work_arrays (lmin,lmax)
@@ -1215,6 +1284,10 @@ AREA_PARTITION: do NPPL=1,2
 
 CLOUD_TOP:  do L=LMIN+1,LM
 
+            ! Reset some scalars used by diagnostics
+            eplume = 0
+            delta  = 0
+            
             !****
             !**** TRIGGERING CONDITIONS FOR MOIST CONVECTION
             !****
@@ -1328,7 +1401,16 @@ CLOUD_TOP:  do L=LMIN+1,LM
 
             !**** CONDENSE VAPOR IN THE PLUME AND ADD LATENT HEAT
             call get_dq_cond(smp,qmp,plk(l),mplume,lhx,pl(l),dqsum,fqcond)
-
+#ifdef GCAP
+            ! Save rainwater production rate (kg/kg/s)
+            ! Convert dqsum ( kg H2O / kg plume * hPa plume ) to ( kg H2O / kg air / s )
+            ! This may be overwritten in NPPL=2
+            ! dqsum is in kg H2O/kg plume mass * hPa plume mass
+            if ( lhx .eq. lhe ) then
+              kg_plume = 1d2 * mplume * FMC1 * DXYP(j_debug) * bygrav
+              mc_dqcond(L,IC) = ( dqsum / mplume ) * kg_plume * bykg(L) * bydtsrc 
+            endif
+#endif
             if(DQSUM.gt.0. .and. QMP.gt.teeny) then
               QMOMP(xymoms) =  QMOMP(xymoms)*(1.-FQCOND)
               SMP=SMP+SLH*DQSUM/PLK(L)
@@ -1346,6 +1428,14 @@ CLOUD_TOP:  do L=LMIN+1,LM
             CDHEAT(L)=SLH*COND(L)          ! calculate CDHEAT before add CONDV
             CDHSUM=CDHSUM+CDHEAT(L)
             COND(L)=COND(L)+CONDV(L-1)     ! add in the vertical transported COND
+#ifdef GCAP
+            ! Convert (kg/kg)*mb to kg/m2/s; flip sign since in updraft
+            IF ( TL(L-1) .gt. TF ) THEN
+              mc_pflx_l(L) = mc_pflx_l(L) - ( ( CONDV(L-1) / CCM(L-1) ) * ( PL(L) * 1d2 / ( RGAS * TL(L) ) ) ) / dZm(L)
+            ELSE
+              mc_pflx_i(L) = mc_pflx_i(L) - ( ( CONDV(L-1) / CCM(L-1) ) * ( PL(L) * 1d2 / ( RGAS * TL(L) ) ) ) / dZm(L)
+            ENDIF
+#endif
 
             if (VLAT(L-1).ne.VLAT(L)) then
             SMP=SMP-(VLAT(L-1)-VLAT(L))*CONDV(L-1)*BYSHA/PLK(L) !phase change of uplifted condensate
@@ -1708,6 +1798,15 @@ CLOUD_TOP:  do L=LMIN+1,LM
                   DVM(K,L)=DVM(K,L)-V_0(K,L)*EPLUME-VMTEMP
                 end do
 
+#ifdef GCAP
+                !====================================================================
+                ! Archive mass that entrains into the upward plume (kg/m2/s)
+                !====================================================================
+                ! Done with entrainment in upward plume, so archive here.
+                ! Note: Do not accumulate here, as EPLUME may be overwritten in NPPL=2
+                mc_up_ent(L,IC) = 100.*EPLUME*bygrav/dtsrc
+#endif
+                                
               end if         ! big enough check
             end if         ! non-zero entrainment check
 
@@ -1730,9 +1829,17 @@ CLOUD_TOP:  do L=LMIN+1,LM
                 DETALL(L,IC,LM) = DET(L)*100.*1000.
               endif
 #endif
+#ifdef GCAP
+              !=========================================================================
+              ! Archive mass that detrains from upward plumes (occurs at cloud tops; kg/m2/s)
+              !=========================================================================
+              ! MPLUME is the mass of the plume in mb
+              ! DELTA is the fraction that detrains from the plume into the layer
+              mc_up_det(L,IC) = mc_up_det(L,IC) + 100.*DELTA*MPLUME*bygrav/dtsrc
+#endif
 
-              DM(L)=DM(L)+DELTA*MPLUME
-              MPLUME=MPLUME*(1.D0-DELTA)
+              DM(L)=DM(L)+DELTA*MPLUME   ! Mass that leaves plume
+              MPLUME=MPLUME*(1.D0-DELTA) ! Mass that remains in plume
               DSM(L)=  DSM(L)+DELTA*SMP
               SMP = SMP  *(1.-DELTA)
               DSMOM(xymoms,L)=DSMOM(xymoms,L)+DELTA*SMOMP(xymoms)
@@ -1915,8 +2022,8 @@ CLOUD_TOP:  do L=LMIN+1,LM
             if(CONDP(L).gt.CONDP1(L)) CONDP(L)=CONDP1(L)
             CONDV(L)=COND(L)-CONDP1(L)       ! part of COND transported up
             COND(L)=COND(L)-CONDV(L)         ! CONDP1(L)
-            TAUMC1(L)=TAUMC1(L)-CONDV(L)*FMC1
-
+            TAUMC1(L)=TAUMC1(L)-CONDV(L)*FMC1 
+ 
 #ifdef TRACERS_WATER
             FQCONDV=CONDV(L)/((COND(L)+CONDV(L))+teeny)
             TRCONDV(:,L)=FQCONDV*TRCOND(:,L)
@@ -2015,10 +2122,15 @@ CLOUD_TOP:  do L=LMIN+1,LM
           !**** LOOP FROM TOP DOWN OVER POSSIBLE DOWNDRAFTS
           !****
 DOWNDRAFT: do L=LDRAFT,1,-1
+
             LHX=VLAT(L)               ! LHX consistency
             SLH=LHX*BYSHA
             TNX1=SMDN*PLK(L)/DDRAFT   ! save for tracers
 
+            ! Reset some scalars used in diagnostics
+            ! Downdrafts happen outside of the NPPL loop.
+            eplume = 0.
+            
             call get_dq_evap(smdn,qmdn,plk(l),ddraft,lhx,pl(l),cond(l), dqsum,fqcond1)
 
             !**** EVAPORATE CONVECTIVE CONDENSATE IN DOWNDRAFT AND UPDATE DOWNDRAFT
@@ -2029,6 +2141,13 @@ DOWNDRAFT: do L=LDRAFT,1,-1
             if(DQEVP.gt.SMDN*PLK(L)/SLH) DQEVP=SMDN*PLK(L)/SLH
             if (L.lt.LMIN) DQEVP=0.
 
+#ifdef GCAP
+            ! Save re-evaporation rate (kg/kg/s)
+            ! Convert from ( kg H2O/kg plume * mb plume ) -> ( kg H2O / kg air / s ) 
+            kg_plume = 1d2 * ddraft * FMC1 * DXYP(j_debug) * bygrav
+            mc_dqevap(L,IC) = mc_dqevap(L,IC) + (dqevp/ddraft) * kg_plume * bykg(L) * bydtsrc
+#endif
+            
             FSEVP = 0
             if (PLK(L)*SMDN.gt.teeny) FSEVP = SLH*DQEVP/(PLK(L)*SMDN)
             SMDN=SMDN-SLH*DQEVP/PLK(L)
@@ -2133,6 +2252,14 @@ DOWNDRAFT: do L=LDRAFT,1,-1
                 DTMOMR(:,L,1:NTX)=DTMOMR(:,L,1:NTX)-TMOM(:,L,1:NTX)*FENTRA
 #endif  /* TRACERS_ON */
 
+#ifdef GCAP
+                !========================================================================
+                ! Archive mass flux entrained to the downdraft (kg/m2/s)
+                !========================================================================
+                mc_dd_ent( L, IC ) = 100.*EDRAFT*bygrav/dtsrc
+                mc_counts(L,IC,5) = mc_counts(L,IC,5) + 1
+#endif
+                
               else  ! occasionally detrain into environment if ddraft too big
                 FENTRA=EDRAFT/(DDRUP+teeny)  ! < 0
                 DSM(L)=DSM(L)-FENTRA*SMDN
@@ -2160,6 +2287,15 @@ DOWNDRAFT: do L=LDRAFT,1,-1
                 TMOMDN(xymoms,1:NTX)= TMOMDN(xymoms,1:NTX)*(1.+FENTRA)
 #endif  /* TRACERS_ON */
 
+#ifdef GCAP
+                !========================================================================
+                ! Archive mass flux detrained from the downdraft (kg/m2/s)
+                !========================================================================
+                ! Note: Sign flipped
+                mc_dd_det( L, IC ) = -100.*EDRAFT*bygrav/dtsrc
+                mc_counts(L,IC,6) = mc_counts(L,IC,6) + 1
+#endif
+                
               end if
             end if
 
@@ -2453,7 +2589,7 @@ DOWNDRAFT: do L=LDRAFT,1,-1
 !              !**** reduce subsidence post hoc.
 !              LM1=max(1,L-1)
 !              if (TM(LM1,N)+TM(L,N).lt.0) then
-!              	 TM(L,N) = 0.d0
+!              	 TM(L,N) = 0.d0 
 !	         write(6,*) trname(n)," neg cannot be fixed!",L,TM(LM1:L,N)
 !              else
 !                TM(L-1,N)=TM(L-1,N)+TM(L,N)
@@ -2469,7 +2605,7 @@ DOWNDRAFT: do L=LDRAFT,1,-1
               enddo
               if(vsum.lt.0.) then
 #ifdef TRACERS_TOMAS
-                tm(l,n) = 0.d0  !dmw 2/1/2017 set neg tracer to zero
+	        tm(l,n) = 0.d0  !dmw 2/1/2017 set neg tracer to zero
                 write(6,*) trname(n)," neg cannot be fixed, setting to zero!",L,TM(1:L,N)
 #else
                 write(6,*) trname(n)," neg cannot be fixed!",L,TM(1:L,N)
@@ -2478,13 +2614,13 @@ DOWNDRAFT: do L=LDRAFT,1,-1
                 if(l-lborrow1.gt.1) then
                   write(6,*) trname(n),' nonlocal borrow: it,i,j,l,tr,cm',itime,i_debug,j_debug,l,tm(lborrow1:l,n),cmneg(l)
                 else
-                  write(6,*) trname(n),' neg: it,i,j,l,tr,cm',itime,i_debug,j_debug,l,tm(l,n),cmneg(l)
+		  write(6,*) trname(n),' neg: it,i,j,l,tr,cm',itime,i_debug,j_debug,l,tm(l,n),cmneg(l)
 #ifdef TRACERS_TOMAS
-                  tm(l,n)=0.d0 !dmw 2/1/2017 set neg tracer to zero
+		  tm(l,n)=0.d0 !dmw 2/1/2017 set neg tracer to zero
                   ! setting tm=0 here means tm multiplier below is 1
                   write(6,*) 'TOMAS setting tm=0, not taking tm from below'
-#endif
-                endif
+#endif                 
+	        endif
                 ! note: borrowing from more than one layer is done by
                 ! multiplication rather than subtraction
                 tm(lborrow1:l-1,n)=tm(lborrow1:l-1,n)*(vsum/(vsum-tm(l,n)))
@@ -2522,6 +2658,18 @@ DOWNDRAFT: do L=LDRAFT,1,-1
             CUMFLX(L,IC,LMIN) = 100.*MCFLX(L)*bygrav/dtsrc
             DWNFLX(L,IC,LMIN) = 100.*DDMFLX(L)*bygrav/dtsrc
           endif
+#endif
+#ifdef GCAP
+          ! Archive plume mass fluxes (kg/m2/s)
+
+          ! MCMFLX is the plume mass (CCM; mb) times fraction of plume area/gridbox area (FMC1)
+          mc_up_mf(L,IC) = mc_up_mf(L,IC) + 100.*MCFLX(L)*bygrav/dtsrc
+          mc_counts(L,IC,1) = mc_counts(L,IC,1) + 1
+          
+          ! DDMFLX is the plume mass (DDM; mb) times fraction of plume area/gridbox area (FMC1)
+          mc_dd_mf(L,IC) = mc_dd_mf(L,IC) + 100.*DDMFLX(L)*bygrav/dtsrc          
+          mc_counts(L,IC,4) = mc_counts(L,IC,4) + 1
+          
 #endif
 
         end do
@@ -2637,6 +2785,10 @@ EVAP_PRECIP: do L=LMAX-1,1,-1
             call stop_model("MSTCNV: negative cloud cover", 255)
           END IF
 
+#ifdef GCAP
+          IF ( CCM(L) > 0 ) CCM_REF = CCM(L)
+#endif
+
           !**** PRECIPITATION IS ALLOWED TO EVAPORATE FULLY INTO A FRACTION OF
           !**** THE GRIDBOX HALF AS LARGE AS THE FRACTION OF GRIDBOX MASS THAT
           !**** CONVECTS
@@ -2670,6 +2822,12 @@ EVAP_PRECIP: do L=LMAX-1,1,-1
 
             if (mcloud.gt.0) call get_dq_evap (smold(l),qmold(l),plk(l),airm(l),lhx,pl(l),prcp*AIRM(L)/MCLOUD, dqsum,fprcp)
             dqsum=dqsum*MCLOUD*BYAM(L)
+
+#ifdef GCAP
+            ! Re-evaporated precipitation [kg/kg/s]
+            kg_plume = 1d2 * mcloud * fevap * DXYP(j_debug) * bygrav
+            if (mcloud.gt.0) mc_dqevap(L,IC) = mc_dqevap(L,IC) + (dqsum/mcloud) * kg_plume * bykg(L) * bydtsrc
+#endif
 
             PRCP=PRCP-DQSUM
             QM(L)=QM(L)+DQSUM
@@ -2721,8 +2879,8 @@ EVAP_PRECIP: do L=LMAX-1,1,-1
               !Thus the grid-scale humidity is inversely weighted by the amount of
               !cloud in the grid box, and is assumed to be the average
               !of the humidity values before and after evaporation.
-              TNX1=(SM(L)*PLK(L)-SLH*DQSUM*(1./(2.*MCLOUD)-1.))*BYAM(L)
-              HEFF = Min (1d0, (QM(L)+DQSUM*(1/(2*MCLOUD)-1))*byAM(L)  /QSAT(TNX1,LHX,PL(L)))
+                TNX1=(SM(L)*PLK(L)-SLH*DQSUM*(1./(2.*MCLOUD)-1.))*BYAM(L)
+                HEFF = Min (1d0, (QM(L)+DQSUM*(1/(2*MCLOUD)-1))*byAM(L)  /QSAT(TNX1,LHX,PL(L)))
 
               Call GET_EVAP_FACTOR(NTX,TOLD,LHX,HEFF,FPRCP,FPRCPT,ntix)
               dtr(1:ntx) = fprcpt(1:ntx)*trprcp(1:ntx)
@@ -2849,6 +3007,17 @@ EVAP_PRECIP: do L=LMAX-1,1,-1
           end if
 #endif
 #endif /* TRACERS_WATER */
+
+#ifdef GCAP
+            ! Convert (kg/kg)*mb to kg/m2/s
+            ! Use CCM_REF set to the last positive CCM(L) in the column to prevent
+            ! floating overflows for precipitation beneath the cloud base
+            IF ( TL(L) .gt. TF ) THEN
+              mc_pflx_l(L) = mc_pflx_l(L) + ( ( PRCP / CCM_REF ) * ( PL(L) * 1d2 / ( RGAS * TL(L) ) ) ) / dZm(L)
+            ELSE
+              mc_pflx_i(L) = mc_pflx_i(L) + ( ( PRCP / CCM_REF ) * ( PL(L) * 1d2 / ( RGAS * TL(L) ) ) ) / dZm(L)
+            ENDIF
+#endif          
 
           !**** end of loop down from top of plume
         end do EVAP_PRECIP
@@ -3104,7 +3273,7 @@ OPTICAL_THICKNESS: do L=1,LMCMAX
 
     end subroutine reset_tracer_work_arrays
 #endif  /* TRACERS_ON */
-
+ 
   end subroutine MSTCNV
 
 !****************************************************************************************
@@ -3328,6 +3497,7 @@ OPTICAL_THICKNESS: do L=1,LMCMAX
     integer K,L,N  !@var K,L,N loop variables
 
     real*8 THBAR !@var THBAR potential temperature at layer edge
+    real*8 dqevap_tmp
 
     !****
     !**** LARGE-SCALE CLOUDS AND PRECIPITATION
@@ -3367,6 +3537,15 @@ OPTICAL_THICKNESS: do L=1,LMCMAX
     QHEATI=0.
     CLDSSL=0
     TAUSSL=0
+#ifdef GCAP
+    CLDSSL3D=0.
+    TAUSSL3D=0.
+    ! Reset arrays that track the condensation/evaporation fluxes
+    ls_dqcond = 0d0
+    ls_dqevap = 0d0
+    ls_pflx_l(:) = 0d0
+    ls_pflx_i(:) = 0d0     
+#endif
     WMPR=0.
     prebar1=0.
     rh1=0.
@@ -3877,11 +4056,15 @@ OPTICAL_THICKNESS: do L=1,LMCMAX
         !**** UNFAVORABLE CONDITIONS FOR CLOUDS TO EXIT, PRECIP OUT CLOUD WATER
         QHEATL(L)=0.           ! QHEAT(L)=0.
         QHEATI(L)=0.
+
         if (LHX.eq.LHE.and.QCLX(L).gt.0.) then
 
           call get_dq_evap (tl(l)*rh00(l)/plk(l),ql(l)*rh00(l),plk(l),rh00(l),lhx,pl(l),qclx(l)/(fssl(l)*rh00(l)), dqsum,fqcond1)
           DWDT=DQSUM*RH00(L)*FSSL(L)
-
+#ifdef GCAP
+          ls_dqevap(l) = ls_dqevap(l) + dwdt / dtsrc
+#endif
+          
           !**** DWDT is amount of water going to vapour, store LH (sets QNEW below)
           QHEATL(L)=-DWDT*LHX*BYDTsrc
           if (debug) print*,"ls4",l,qheatl(l)
@@ -3892,13 +4075,17 @@ OPTICAL_THICKNESS: do L=1,LMCMAX
 
           call get_dq_evap (tl(l)*rh00(l)/plk(l),ql(l)*rh00(l),plk(l),rh00(l),lhx,pl(l),qcix(l)/(fssl(l)*rh00(l)), dqsum,fqcond1)
           DWDT=DQSUM*RH00(L)*FSSL(L)
-
+#ifdef GCAP
+          ls_dqevap(l) = ls_dqevap(l) + dwdt / dtsrc
+#endif
+          
           !**** DWDT is amount of water going to vapour, store LH (sets QNEW below)
           QHEATI(L)=-DWDT*LHX*BYDTsrc
           if (debug) print*,"ls4",l,qheat(l)
           PREP(L)=max(0d0,(QCIX(L)-DWDT)*BYDTsrc) ! precip out cloud water
           WMPR(L)=PREP(L)*DTsrc ! precip water (for opt. depth calculation)
         end if
+
         ER(L)=(1.-RH(L))**ERP*LHX*PREBAR(L+1)*GbyAIRM0 ! GRAV/AIRM0
         if(PREICE(L+1).gt.0..and.TL(L).lt.TF) &
              ER(L)=(1.-RHI)**ERP*LHX*PREBAR(L+1)*GbyAIRM0 ! GRAV/AIRM0
@@ -4298,7 +4485,10 @@ OPTICAL_THICKNESS: do L=1,LMCMAX
         SLH=LHX*BYSHA
 
         call get_dq_cond(tl(l),ql(l),1d0,1d0,lhx,pl(l),dqsum,fcond)
-
+#ifdef GCAP
+        ls_dqcond(l) = ls_dqcond(l) + dqsum * fssl(l) / dtsrc
+#endif
+ 
         if(DQSUM.gt.0.) then
           if (debug) print*,"lsB",l,slh*dqsum
 
@@ -4501,9 +4691,17 @@ OPTICAL_THICKNESS: do L=1,LMCMAX
       HCNDSS=HCNDSS+FSSL(L)*(TL(L)-TOLD)*AIRM(L)
       SSHR(L)=SSHR(L)+FSSL(L)*(TL(L)-TOLD)*AIRM(L)
       DQLSC(L)=DQLSC(L)+FSSL(L)*(QL(L)-QOLD)
+
+#ifdef GCAP
+      ! Convert to kg/m2/s and from top edge (prebar) to bottom edge (ls_pflx*)
+      ls_pflx_l(l+1) = (prebar(l)-preice(l)) * 100.
+      ls_pflx_i(l+1) =            preice(l)  * 100.
+#endif
+
     end do CLOUD_FORMATION ! end of loop over L
 
     PRCPSS=max(0d0,PREBAR(1)*GRAV*DTsrc) ! fix small round off err
+
 #ifdef TRACERS_WATER
     do n=1,ntx
       TRPRSS(n)=TRPRBAR(n,1)
@@ -4982,6 +5180,19 @@ OPTICAL_THICKNESS: do L=1,LMCMAX
 #endif
     end do OPTICAL_THICKNESS
 
+#ifdef GCAP
+    ! Archive these 3-D cloud fractions before converting to areal 2-D cloud fraction
+    DO L=1,LMCLD
+       IF ( TAUSSL(L) .lt. 0 ) THEN
+          CLDSSL3D(L) = 0d0
+          TAUSSL3D(L) = 0d0
+       ELSE
+          CLDSSL3D(L) = CLDSSL(L)
+          TAUSSL3D(L) = TAUSSL(L)
+       ENDIF
+    ENDDO
+#endif
+    
     !**** CALCULATE OPTICAL THICKNESS
     do L=1,LMCLD
       CLDSV1(L)=CLDSSL(L)
@@ -7067,7 +7278,7 @@ subroutine ISCCP_CLOUD_TYPES(sunlit,pfull &
 end
 
 subroutine get_dq_cond(sm,qm,plk,mass,lhx,pl,   & ! input
-     dqsum,fcond)         ! output
+     dqsum,fcond)
 !@sum get_dq calculation of condensation from vapour
   use CONSTANT, only : bysha
   implicit none
@@ -7081,7 +7292,7 @@ subroutine get_dq_cond(sm,qm,plk,mass,lhx,pl,   & ! input
 !@var DQSUM amount of water change (+ve is condensation)
 !@var FCOND fractional amount of vapour that condenses
   real*8, intent(OUT) :: dqsum,fcond
-  real*8 TP,QST,QSAT,DQSATDT,DQ,QMT,SLH
+  real*8 TP,QST,QSAT,DQSATDT,DQ,QMT,SLH,MP
   integer N
 
   DQSUM=0.

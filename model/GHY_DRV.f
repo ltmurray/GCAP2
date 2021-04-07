@@ -823,6 +823,9 @@ c****
 #ifdef TRACERS_GASEXCH_land_CO2
       use tracer_com, only : n_CO2n
 #endif
+#ifdef GCAP
+      use ghy_com, only : wfcs, z0m_save, lai_save
+#endif
       use TimeConstants_mod, only: SECONDS_PER_YEAR
       implicit none
 
@@ -1464,6 +1467,32 @@ C
           sddarr2d(i,j) = atmlnd%runo(i,j)*fearth(i,j)
         enddo;        enddo
         call inc_subdd(subdd,k,sddarr2d)
+#ifdef GCAP
+      case ('GWETTOP')
+         do j=j_0,j_1; do i=i_0,i_1
+            sddarr2d(i,j)=0.0
+            if (fearth(i,j).gt.0) then
+              sddarr2d(i,j)=(wearth(i,j)+aiearth(i,j))/(wfcs(i,j)+1e-20)
+            else
+              sddarr2d(i,j)=1 ! Set to 1 over oceans to match MERRA-2
+            end if 
+         enddo; enddo
+         call inc_subdd(subdd,k,sddarr2d)
+      case ('GWETROOT')
+         do j=j_0,j_1; do i=i_0,i_1
+            sddarr2d(i,j)=0.0
+            if (fearth(i,j).gt.0) then
+              sddarr2d(i,j)=(wearth(i,j)+aiearth(i,j))/(wfcs(i,j)+1e-20)
+            else
+              sddarr2d(i,j)=0 ! Set to 0 over oceans to match MERRA-2
+            end if
+         enddo; enddo
+         call inc_subdd(subdd,k,sddarr2d)
+      case ('LAI') 
+         call inc_subdd(subdd,k,lai_save)         
+      case ('Z0M')
+         call inc_subdd(subdd,k,z0m_save)  
+#endif
       end select
       enddo
       enddo
@@ -1649,6 +1678,9 @@ c***********************************************************************
      &    ,airrig,aeirrig,alandC
       use ent_com, only : excess_C
       use ghy_com, only : gdeep, gsaveL, fearth
+#ifdef GCAP
+      use ghy_com, only : lai_save
+#endif
       USE CLOUDS_COM, only : DDMS
 
       use pbl_drv, only : t_pbl_args
@@ -1759,6 +1791,9 @@ ccc the following values are returned by PBL
       aij(i,j,ij_rauto)=aij(i,j,ij_rauto)+arauto*ptype
       aij(i,j,ij_clab)=aij(i,j,ij_clab)+(aclab/nisurf)*ptype
       aij(i,j,ij_lai)=aij(i,j,ij_lai)+(alai/nisurf)*ptype
+#ifdef GCAP
+      lai_save(i,j) = (alai/nisurf)*ptype
+#endif
       aij(i,j,ij_soilresp)=aij(i,j,ij_soilresp)+asoilresp*ptype
       aij(i,j,ij_soilCpoolsum)=aij(i,j,ij_soilCpoolsum)
      &     + (asoilCpoolsum/nisurf)*ptype

@@ -1641,6 +1641,9 @@ C     OUTPUT DATA
 #ifdef GCC_COUPLE_RAD
      *     ,GCCco2_tracer_save,GCCco2rad_to_chem
 #endif
+#ifdef GCAP
+     *     ,TAUW3D,TAUI3D
+#endif
 #ifdef mjo_subdd
      *     ,SWHR,LWHR,SWHR_cnt,LWHR_cnt,OLR_acc,OLR_cnt
      *     ,swu_avg,swu_cnt
@@ -1667,6 +1670,10 @@ C     OUTPUT DATA
      *     cldmc,cldss,csizmc,csizss,llow,lmid,lhi,fss,taussip,csizssip
      *    ,QLss,QIss,QLmc,QImc
      *    ,get_cld_overlap  !  subroutine
+#ifdef GCAP
+      use clouds_com, only : cldss3d
+      use constant, only   : teeny
+#endif
       USE DIAG_COM, only : ia_rad,jreg,aij=>aij_loc,aijl=>aijl_loc
      &     ,ntype,ftype,itocean,itlake,itearth,itlandi,itoice,itlkice
      *     ,adiurn=>adiurn_loc,ndiuvar,ia_rad_frc,
@@ -1761,6 +1768,10 @@ C     OUTPUT DATA
 #endif
       use DIAG_COM, only: ij_nintaerext,ij_nintaersca,ij_nintaerasy
       use RADPAR, only: nintaerext,nintaersca,nintaerasy
+#ifdef GCAP
+      use RAD_COM, only : save_alb
+      use O3mod,   only : save_to3
+#endif
       IMPLICIT NONE
       real*8 dz,rho
 C
@@ -2239,6 +2250,11 @@ c      write(6,*) 'RJH: GHG: FORC=',ghg_totforc
       cfmip_qci = 0.
       cfmip_qcl = 0.
 #endif
+#ifdef GCAP
+      tauw3d = 0.
+      taui3d = 0.
+#endif
+
 C****
 C**** MAIN J LOOP
 C****
@@ -2399,6 +2415,9 @@ C**** save 3D cloud fraction as seen by radiation
             IF(SVLAT(L,I,J).EQ.LHE) THEN
               TAUWC(L)=cldx*TAUMCL
               OPTDW=OPTDW+TAUWC(L)
+#ifdef GCAP
+              TAUW3D(I,J,L) = TAUW3D(I,J,L) + TAUMCL ! in-cloud vs. in-cell TAUWC(L)
+#endif
               call inc_ajl(i,j,l,jl_wcld,1d0)
               call inc_ajl(i,j,l,jl_wcldwt,pdsig(l,i,j))
               aij(i,j,ij_lwprad)=aij(i,j,ij_lwprad)+QLmc(l,i,j)*rhodz
@@ -2415,6 +2434,9 @@ C**** save 3D cloud fraction as seen by radiation
             ELSE
               TAUIC(L)=cldx*TAUMCL
               OPTDI=OPTDI+TAUIC(L)
+#ifdef GCAP
+              TAUI3D(I,J,L) = TAUI3D(I,J,L) + TAUMCL ! in-cloud vs. in-cell TAUIC(L)
+#endif              
               call inc_ajl(i,j,l,jl_icld,1d0)
               call inc_ajl(i,j,l,jl_icldwt,pdsig(l,i,j))
               aij(i,j,ij_iwprad)=aij(i,j,ij_iwprad)+QImc(l,i,j)*rhodz
@@ -2436,6 +2458,9 @@ C**** save 3D cloud fraction as seen by radiation
             IF(SVLHX(L,I,J).EQ.LHE) THEN
               TAUWC(L)=cldx*TAUSSL
               OPTDW=OPTDW+TAUWC(L)
+#ifdef GCAP
+              TAUW3D(I,J,L) = TAUW3D(I,J,L) + TAUSSL ! in-cloud vs. in-cell TAUWC(L)
+#endif
               call inc_ajl(i,j,l,jl_wcld,1d0)
               call inc_ajl(i,j,l,jl_wcldwt,pdsig(l,i,j))
               aij(i,j,ij_lwprad)=aij(i,j,ij_lwprad)+QLss(l,i,j)*rhodz
@@ -2453,6 +2478,9 @@ C**** save 3D cloud fraction as seen by radiation
                 SIZEIC(L)=CSIZSSIP(L,I,J)
                 TAUIC(L)=cldx*TAUSSLIP
                 OPTDI=OPTDI+TAUIC(L)
+#ifdef GCAP
+              TAUI3D(I,J,L) = TAUI3D(I,J,L) + TAUSSLIP ! in-cloud vs. in-cell TAUIC(L)
+#endif              
                 call inc_ajl(i,j,l,jl_icld,1d0)
                 call inc_ajl(i,j,l,jl_icldwt,pdsig(l,i,j))
                 aij(i,j,ij_iwprad)=aij(i,j,ij_iwprad)+QIss(l,i,j)*rhodz
@@ -2469,6 +2497,9 @@ C**** save 3D cloud fraction as seen by radiation
             ELSE
               TAUIC(L)=cldx*TAUSSL
               OPTDI=OPTDI+TAUIC(L)
+#ifdef GCAP
+              TAUI3D(I,J,L) = TAUI3D(I,J,L) + TAUSSL ! in-cloud vs. in-cell TAUIC(L)              
+#endif              
               call inc_ajl(i,j,l,jl_icld,1d0)
               call inc_ajl(i,j,l,jl_icldwt,pdsig(l,i,j))
               aij(i,j,ij_iwprad)=aij(i,j,ij_iwprad)+QIss(l,i,j)*rhodz
@@ -2943,7 +2974,7 @@ C**** Ozone:
       end if
 #endif /* GCC_COUPLE_RAD */
 #if (defined TRACERS_SPECIAL_Shindell)
-! final (main) RCOMPX call can use tracer methane(or not):
+! final (main) RCOMPX call can use tracer methane (or not):
       use_tracer_chem(2)=onoff_chem*Lmax_rad_CH4
       if (is_set_param('initial_GHG_setup')) then
         call get_param('initial_GHG_setup', initial_GHG_setup)
@@ -4258,6 +4289,74 @@ C****
       enddo
       enddo
 
+#ifdef GCAP
+      call find_groups('aijlh',grpids,ngroups)
+      do igrp=1,ngroups
+      subdd => subdd_groups(grpids(igrp))
+      do k=1,subdd%ndiags
+      select case (subdd%name(k))
+      case ('OPTDEPTH')
+        do j=j_0,j_1; do i=i_0,imaxj(j); do l=1,lmaxsubdd
+           ! Weight mean cloud optical thickness by relative 2-D area fractions
+           sddarr3d(i,j,l)=(cldss(l,i,j)*TAUSS(l,i,j) + 
+     &          cldmc(l,i,j)*TAUMC(l,i,j)  ) /
+     &          ( cldss(l,i,j) + cldmc(l,i,j) + teeny )
+        enddo;                enddo;    enddo
+        call inc_subdd(subdd,k,sddarr3d)
+      case ('CLOUD')
+        do j=j_0,j_1; do i=i_0,imaxj(j); do l=1,lmaxsubdd
+           sddarr3d(i,j,l)=min(1.0,CLDSS3D(l,i,j) + CLDMC(l,i,j))           
+        enddo;                enddo;    enddo
+        call inc_subdd(subdd,k,sddarr3d)
+      case ('TAUCLI')
+         call inc_subdd(subdd,k,taui3d)
+      case ('TAUCLW')
+         call inc_subdd(subdd,k,tauw3d)
+      end select      
+      enddo
+      enddo
+
+      call find_groups('aijh',grpids,ngroups)
+      do igrp=1,ngroups
+      subdd => subdd_groups(grpids(igrp))
+      do k=1,subdd%ndiags
+      select case (subdd%name(k))
+      case('PARDF')
+        do j=j_0,j_1; do i=i_0,imaxj(j)
+          sddarr(i,j) = 0.82*srvissurf(i,j)*(1d0-fsrdir(i,j))*cosz1(i,j)
+        enddo;        enddo
+        call inc_subdd(subdd,k,sddarr)
+      case('PARDR')
+        do j=j_0,j_1; do i=i_0,imaxj(j)
+           sddarr(i,j) = 0.82*srvissurf(i,j)*(fsrdir(i,j))*cosz1(i,j)
+        enddo;        enddo
+        call inc_subdd(subdd,k,sddarr)
+      case('ALBEDO')
+         do j=j_0,j_1; do i=i_0,imaxj(j)
+            if ( srdn(i,j).gt.0 ) then
+               ! Saves non-zero albedos for nighttime
+               save_alb(i,j) = 1d0-alb(i,j,1)
+            endif
+            sddarr(i,j) = save_alb(i,j)
+        enddo;        enddo
+        call inc_subdd(subdd,k,sddarr)
+      case ('CLDTOT') ! totcld in standard model
+        call inc_subdd(subdd,k,cfrac)
+      case ('SWGDN')  ! swds in standard model
+        do j=j_0,j_1; do i=i_0,imaxj(j)
+          sddarr(i,j)=srdn(i,j)*cosz2(i,j)
+        enddo;        enddo
+        call inc_subdd(subdd,k,sddarr)
+      case ('TO3')     
+        do j=j_0,j_1; do i=i_0,imaxj(j)
+           sddarr(i,j) = save_to3(i,j)
+        enddo;        enddo
+        call inc_subdd(subdd,k,sddarr)                 
+      end select
+      enddo
+      enddo      
+#endif
+
       call find_groups('rijlh',grpids,ngroups)
       do igrp=1,ngroups
       subdd => subdd_groups(grpids(igrp))
@@ -4266,15 +4365,15 @@ C****
       case ('MRCO2rad')
         do j=j_0,j_1; do i=i_0,imaxj(j); do l=1,lmaxsubdd
           sddarr3d(i,j,l) = CO2out(l,i,j)
-        enddo;        enddo;             enddo
+        enddo;                enddo;    enddo
         call inc_subdd(subdd,k,sddarr3d)
       case ('wtrtau')
         call inc_subdd(subdd,k,wtrtau)
       case ('icetau')
         call inc_subdd(subdd,k,icetau)
-      end select
-      end do
-      end do
+      end select      
+      enddo
+      enddo
 
 #ifdef SCM
       call find_groups('rijlh',grpids,ngroups)
@@ -5103,7 +5202,7 @@ c
      &  units = 'W/m^2',
      &  sched = sched_rad
      &     )
-c
+c     
       arr(next()) = info_type_(
      &  sname = 'swus',
      &  lname = 'SOLAR UPWARD FLUX at SURFACE',

@@ -766,7 +766,7 @@ C**** Calculate snow-ice possibility
           TRSNWIC = 0.
 #endif
         end if
-c     if (debug)  write(6,'(A,2I4,4F11.6)') "si3",i,j,SNOW,1d3*SSIL(1)
+c        if (debug)  write(6,'(A,2I4,4F11.6)') "si3",i,j,SNOW,1d3*SSIL(1)
 c     $       /(XSI(1)*(ACE1I+SNOW)),1d3*SSIL(2)/(XSI(2)*(ACE1I+SNOW))
 c     $       ,1d3*(SSIL(1)+SSIL(2))/ACE1I
 c        if (debug) print*,"si3",i,j,SNOW,HSIL,SSIL,MSI2, MSNWIC,HSNWIC,
@@ -819,7 +819,7 @@ c        if (debug) write(6,'(A,4I4,4F11.6)') "ponds",i,j,jday,jhour,
 c     *       melt12,pond_melt(i,j),ti(HSIL(1)/(XSI(1)*(SNOW+ACE1I)),
 c     *         1d3*SSIL(1)/(XSI(1)*(SNOW+ACE1I))),
 c     *         1d3*(SSIL(1)+SSIL(2))/ACE1I
-        
+
 C**** Net fluxes to ocean
         RUNOSI(I,J) = FMOC + RUN  + MFLUX + MSNWIC
         ERUNOSI(I,J)= FHOC + ERUN + HFLUX + HSNWIC
@@ -916,7 +916,7 @@ c
       DO I=I_0,si_state%IMAXJ(J)
 
 c        debug = i.eq.52.and.j.eq.87
-        
+
       PWATER=FWATER(I,J)
       ROICE=RSI(I,J)
       POICE=ROICE*PWATER
@@ -1912,6 +1912,9 @@ C**** Calculate RSI and MSI for current day
           ZIMAX=2d0
           IF(atmice%lat(i,j).GT.0.) ZIMAX=3.5d0 ! northern hemisphere
           rsinew = rsi(i,j)
+          if (rsi(i,j) > 1.d0) 
+     *     write (6,*) ' i,j, rsi(i,j) = ', i,j, rsi(i,j)
+          rsinew = min (rsi(i,j), 1.d0)
           MSINEW=RHOI*(ZIMIN-Z1I+(ZIMAX-ZIMIN)*RSINEW*DM(I,J))
 C**** Ensure that lead fraction is consistent with kocean=1 case
           IF (RSINEW.gt.0) THEN
@@ -1920,8 +1923,11 @@ C**** Ensure that lead fraction is consistent with kocean=1 case
               RSINEW = 1.-OPNOCN
               MSINEW=RHOI*(ZIMIN-Z1I+(ZIMAX-ZIMIN)*RSINEW*DM(I,J))
             END IF
-          END IF
+          END IF 
           RSI(I,J)=RSINEW
+          if (RSINEW > 1.d0)
+     *     write (6,*) ' i,j, RSINEW = ', i,j, RSINEW      
+          RSI(I,J)=min (RSINEW, 1.d0)
           MSI(I,J)=MSINEW
         END DO
         END DO

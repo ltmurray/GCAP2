@@ -1774,6 +1774,9 @@ C----------------------------------------------
       SUBROUTINE RCOMPX
       use SURF_ALBEDO, only : getsur
       use O3mod, only : plbo3,nlo3,plbo3_traditional,nlo3_traditional
+#ifdef GCAP
+      use O3mod, only : save_to3
+#endif
 #ifdef SCM
       use SCM_COM, only : SCMopt,SCMin
 #endif
@@ -1858,6 +1861,10 @@ C--------------------------------
       endif
 C--------------------------------
 
+#ifdef GCAP
+      ! Save DU of ozone used in calculation
+      save_to3(igcm,jgcm) = SUM(u0gas(:,3))*1000.0
+#endif
 
 C--------------------------------
       if(set_aerosols_internally) then

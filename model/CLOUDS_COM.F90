@@ -59,6 +59,10 @@ module CLOUDS_COM
   real*8, allocatable, dimension(:,:,:) :: TAUMC
 !@var CLDSS super-saturated cloud cover area (percent)
   real*8, allocatable, dimension(:,:,:) :: CLDSS
+#ifdef GCAP
+!@var CLDSS3D super-saturated cloud cover volume 3-D fraction
+  real*8, allocatable, dimension(:,:,:) :: CLDSS3D
+#endif
 !@var CLDMC moist convective cloud cover area (percent)
   real*8, allocatable, dimension(:,:,:) :: CLDMC
 !@var CSIZMC,CSIZSS mc,ss effective cloud droplet radius (microns)
@@ -147,7 +151,7 @@ contains
 !          overlap schemes are already realized by having picked a single MC
 !          random number for the whole column in addition to the ones for SS
 !          (That block was added to avoid unneeded computations in long runs)
-!  Note 2: Reverse looping over L was only kept for bit-wise consistency
+!  Note 2: Reverse looping over L was only kept for bit-wise consistency 
 !          with the previous version of the code.
 
    if(present(RandSS)) then
@@ -155,9 +159,9 @@ contains
      do L=lmax,1,-1       ! better:  1,lmax  (and replace L+1 by L-1 below)
         if( cldssl(L) > 0 ) then
           if(same_cloud) RandSS(L) = RandSS(L+1)        ! use same random #
-          same_cloud = .true.
+          same_cloud = .true.                           
         else
-          same_cloud = .false.
+          same_cloud = .false.                          
         end if
      end do
    end if
@@ -168,14 +172,14 @@ contains
       if( cldssl(L) > 0 ) then
 !!      if(same_cloud) RandSS(L) = RandSS(L-1)            ! use same random #
         clearss_part = min( clearss_part, 1-cldssl(L) )   ! total overlap
-        same_cloud = .true.
+        same_cloud = .true.                               
       else                                                ! clear sky layer
-        same_cloud = .false.
+        same_cloud = .false.                         
         clearss = clearss * clearss_part                  ! random overlap
         clearss_part = 1.                                 ! reset for next cloud
       end if
    end do
-   clearss = clearss * clearss_part
+   clearss = clearss * clearss_part                 
    if( present(CldSS) ) CldSS = 1.-clearss
 
 !! Treat convective clouds as a single cloud with max. overlap
@@ -219,6 +223,9 @@ subroutine ALLOC_CLOUDS_COM(grid)
        ULS,VLS,UMC,VMC,TLS,QLS,TAUSSIP,CSIZSSIP, &
        QLss,QIss,QLmc,QImc, &
        TMC,QMC,DDM1,AIRX,LMC,DDMS,TDN1,QDN1,DDML
+#ifdef GCAP
+  use CLOUDS_COM, only : CLDSS3D
+#endif
 #if (defined mjo_subdd) || (defined etc_subdd)
   use CLOUDS_COM, only : CLWC3D,CIWC3D,TLH3D,SLH3D,DLH3D,LLH3D
 #endif
@@ -293,6 +300,10 @@ subroutine ALLOC_CLOUDS_COM(grid)
        QLmc(LM,I_0H:I_1H,J_0H:J_1H), &
        QImc(LM,I_0H:I_1H,J_0H:J_1H), &
        STAT=IER)
+#ifdef GCAP
+  allocate( CLDSS3D(LM,I_0H:I_1H,J_0H:J_1H) )
+  CLDSS3D = 0d0
+#endif
 #ifdef mjo_subdd
   allocate( &
        TMCDRY(LM,I_0H:I_1H,J_0H:J_1H), &

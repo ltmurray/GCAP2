@@ -1,0 +1,27 @@
+! parameters that affect at most diagn. output:  standard if DTsrc=1800. (sec)
+TAero_aod_diag=2 ! 0: no output; 1: save optical properties of TAero fields in aij for all bands; 2: save band6 only
+aer_rad_forc=0   ! if set =1, radiation is called numerous times - slow !!
+cloud_rad_forc=1 ! calls radiation twice; use =0 to save cpu time, 2= calculates crf_toa2
+
+SUBDD='PS:6i QV:6i T:6i'
+SUBDD1='ALBEDO:2 CLDTOT:2 EFLUX:2 FRSEAICE:2 FRSNO:2 GWETTOP:2'
+SUBDD2='GWETROOT:2 HFLUX:2 LAI:2 LWI:2 PARDF:2 PARDR:2 PBLH:2'
+SUBDD3='PRECANV:2 PRECCON:2 PRECLSC:2 PRECSNO:2 PRECTOT:2 SLP:2'
+SUBDD4='SNODP:2 SNOMAS:2 SWGDN:2 T2M:2 TO3:2 TROPPT:2 TS:2'
+SUBDD5='U10M:2 USTAR:2 V10M:2 Z0M:2 FLASH_DENS:2 CTH:2 QV2M:2'
+SUBDD6='DTRAIN:6 OMEGA:6 RH:6 U:6 V:6'
+SUBDD7='CLOUD:6 OPTDEPTH:6 QI:6 QL:6 TAUCLI:6 TAUCLW:6'
+SUBDD8='DQRCU:6 DQRLSAN:6 REEVAPCN:6 REEVAPLS:6'
+SUBDD9='CMFMC:6 PFICU:6 PFILSAN:6 PFLCU:6 PFLLSAN:6'
+
+NSUBDD=1         ! saving sub-daily diags every NSUBDD-th physics time step (1/2 hr)
+DAYS_PER_FILE=1
+
+KCOPY=1          ! 0: no output; 1: save .acc; 2: unused; 3: include ocean data
+KRSF=12          ! 0: no output; X: save rsf at the beginning of every X month
+isccp_diags=1    ! use =0 to save cpu time, but you lose some key diagnostics
+nda5d=13         ! use =1 to get more accurate energy cons. diag (increases CPU time)
+nda5s=13         ! use =1 to get more accurate energy cons. diag (increases CPU time)
+ndaa=13
+nda5k=13
+nda4=48          ! to get daily energy history use nda4=24*3600/DTsrc

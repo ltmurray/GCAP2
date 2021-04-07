@@ -68,7 +68,10 @@
 #ifdef SCM
       USE SCM_COM, only : SCMopt,SCMin
 #endif
-
+#ifdef GCAP
+      USE GHY_COM, only : z0m_save
+#endif
+      
       use SOCPBL, only : npbl=>n, zgs, advanc
       USE PBLCOM
 
@@ -244,7 +247,11 @@ C        roughness lengths from Brutsaert for rough surfaces
 
       IF (ITYPE.GT.2) THEN
         Z0M=ROUGHL(I,J)           ! 30./(10.**ROUGHL(I,J))
+#ifdef GCAP
+        z0m_save(I,J) = Z0M
+#endif
       ENDIF
+      if ( isnan(zs1) ) zs1=0
       ztop=zgs+zs1  ! zs1 is calculated before pbl is called
 c     IF (pbl_args%TKV.EQ.pbl_args%TGV)
 c    &     pbl_args%TGV = 1.0001d0*pbl_args%TGV
@@ -346,6 +353,9 @@ c    &     pbl_args%TGV = 1.0001d0*pbl_args%TGV
      &     ,tr,trnradius,trndens,trnmm
 #endif
      &     )
+#ifdef GCAP
+      z0m_save(i,j) = z0m
+#endif
 
       atm%uabl(:,i,j)=upbl(:)
       atm%vabl(:,i,j)=vpbl(:)

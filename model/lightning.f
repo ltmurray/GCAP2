@@ -32,6 +32,7 @@
       ! SUBDD Instantaneous Diagnostic Arrays
       REAL*8, ALLOCATABLE, PUBLIC :: FLASH_DENS(:,:)! Flash density [fl/m2/s]
       REAL*8, ALLOCATABLE, PUBLIC :: CG_DENS(:,:)   ! Cloud-to-ground density
+      REAL*8, ALLOCATABLE, PUBLIC :: CTH_SAVE(:,:)  ! Cloud-top-height [km]
 
 #ifdef AUTOTUNE_LIGHTNING
       ! If AUTOTUNE_LIGHTNING is defined in the rundeck, then the tuning
@@ -98,6 +99,7 @@
       USE ATM_COM,           ONLY : PMIDL00
       USE LIGHTNING,         ONLY : CG_DENS
       USE LIGHTNING,         ONLY : FLASH_DENS
+      USE LIGHTNING,         ONLY : CTH_SAVE
       USE LIGHTNING,         ONLY : L440mbM1
 #ifdef TRACERS_SPECIAL_Shindell
       USE FILEMANAGER,       ONLY : OPENUNIT, CLOSEUNIT
@@ -130,6 +132,9 @@
       !------------------------------------
       ! Allocate arrays for lightning
       !------------------------------------
+
+      allocate(   CTH_SAVE(I_0H:I_1H,J_0H:J_1H) )
+      CTH_SAVE = 0d0
 
       allocate( FLASH_DENS(I_0H:I_1H,J_0H:J_1H) )
       FLASH_DENS = 0d0
@@ -194,7 +199,7 @@
 
       USE LIGHTNING, ONLY : lightning_param
       USE LIGHTNING, ONLY : TUNE_LT_LAND, TUNE_LT_SEA, FLASH_PERTURB
-      USE LIGHTNING, ONLY : CG_DENS, FLASH_DENS, T_NEG_CTR
+      USE LIGHTNING, ONLY : CG_DENS, FLASH_DENS, T_NEG_CTR, CTH_SAVE
 #ifdef TRACERS_SPECIAL_Shindell
       USE LIGHTNING, ONLY : FLASH_YIELD_MIDLAT, FLASH_YIELD_TROPIC
       USE LIGHTNING, ONLY : CLDTOPL, ENOx_lgt
@@ -468,8 +473,9 @@
       aij(i,j,ij_CtoG)  = aij(i,j,ij_CtoG)  +    cg*DTsrc*byaxyp(i,j)
 
       ! Also save for SUBDD instantaneous output
-      FLASH_DENS(i,j)   =   flash*byaxyp(i,j)  ! flashes/s -> flashes/m2/s
-      CG_DENS(i,j)      =      cg*byaxyp(i,j)  ! flashes/s -> flashes/m2/s
+      FLASH_DENS(i,j)   =   flash*byaxyp(i,j)*1d6 ! flashes/s -> flashes/km2/s
+      CG_DENS(i,j)      =      cg*byaxyp(i,j)*1d6 ! flashes/s -> flashes/km2/s
+      CTH_SAVE(i,j)     =               htcon*1d3 !        km -> m
 #ifdef AUTOTUNE_LIGHTNING
       FLASH_UNC(i,j)    =             flashun  ! flashes/s 
 #endif

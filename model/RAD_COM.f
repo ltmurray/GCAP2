@@ -93,6 +93,12 @@ C**** does not produce exactly the same as the default values.
 !@var srnflb_save  Net solar radiation (W/m^2)
 !@var trnflb_save  Net thermal radiation (W/m^2)
       REAL*8,ALLOCATABLE,DIMENSION(:,:,:) :: srnflb_save,trnflb_save
+#ifdef GCAP
+!@var save_alb Surface albedo (unitless)
+      REAL*8,ALLOCATABLE,DIMENSION(:,:) :: save_alb
+!@var TAUW3D,TAUI3D water,ice cloud opt. depths (for diags)
+      REAL*8, DIMENSION(:,:,:), ALLOCATABLE :: TAUW3D,TAUI3D      
+#endif
 !@var TAUSUMW,TAUSUMI column-sum water,ice cloud opt. depths (for diags)
       REAL*8, DIMENSION(:,:), ALLOCATABLE :: TAUSUMW,TAUSUMI
 #ifdef mjo_subdd
@@ -218,7 +224,7 @@ C**** does not produce exactly the same as the default values.
 #endif
 !@var rad_to_chem save 3D quantities from radiation code for use in
 !@+   chemistry (or rest of model). 1=Ozone, 2=aerosol ext, 3=N2O, 4=CH4,
-!@+   5=CFC11+CFC12 
+!@+   5=CFC11+CFC12
       REAL*8, ALLOCATABLE, DIMENSION(:,:,:,:) :: rad_to_chem !saved in rsf
       REAL*8, ALLOCATABLE, DIMENSION(:,:,:,:) :: rad_to_file
 #ifdef GCC_COUPLE_RAD
@@ -392,6 +398,9 @@ C**** Local variables initialised in init_RAD
 #ifdef GCC_COUPLE_RAD
      *     ,GCCco2_tracer_save,GCCco2rad_to_chem,GCCco2rad_to_file
 #endif
+#ifdef GCAP
+     *     ,save_alb,tauw3d,taui3d
+#endif
 #ifdef mjo_subdd
      *     ,SWHR_cnt,LWHR_cnt,SWHR,LWHR,OLR_acc,OLR_cnt
      *     ,swu_avg,swu_cnt
@@ -426,6 +435,10 @@ C**** Local variables initialised in init_RAD
      *     DIFNIR(I_0H:I_1H, J_0H:J_1H),
      *     TAUSUMW(I_0H:I_1H, J_0H:J_1H),
      *     TAUSUMI(I_0H:I_1H, J_0H:J_1H),
+#ifdef GCAP
+     *     TAUW3D(I_0H:I_1H, J_0H:J_1H, LM),
+     *     TAUI3D(I_0H:I_1H, J_0H:J_1H, LM),
+#endif      
      *     SRDN(I_0H:I_1H, J_0H:J_1H),
      *     CFRAC(I_0H:I_1H, J_0H:J_1H),
      *     RCLD(LM, I_0H:I_1H, J_0H:J_1H),
@@ -463,6 +476,13 @@ C**** Local variables initialised in init_RAD
 #endif
      *     STAT=IER)
 
+#ifdef GCAP
+!     Allocate and initialize array for holding surface albedo, which is only
+!     updated during daytime.
+      ALLOCATE( save_alb(I_0H:I_1H,J_0H:J_1H) )
+      save_alb = 0.
+#endif
+      
 #ifdef mjo_subdd
       OLR_acc=0.
       OLR_cnt=0.

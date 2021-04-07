@@ -98,8 +98,9 @@ subroutine CONDSE
   use AMP_AEROSOL, only: NACTV
 #endif
 #endif
-#if (defined CALCULATE_LIGHTNING) || (defined TRACERS_SPECIAL_Shindell)
-      USE LIGHTNING,  only : FLASH_DENS, CG_DENS, FLASH_PERTURB,L440mbM1
+#if (defined CALCULATE_LIGHTNING) || (defined TRACERS_SPECIAL_Shindell) 
+      USE LIGHTNING,  only : FLASH_DENS, FLASH_PERTURB, L440mbM1
+      USE LIGHTNING,  only : CTH_SAVE
 #ifdef AUTOTUNE_LIGHTNING
       USE LIGHTNING,  only : TUNE_LT_LAND, TUNE_LT_SEA
       USE LIGHTNING,  only : LAND_FR_LIS, SEA_FR_LIS
@@ -194,6 +195,10 @@ subroutine CONDSE
        ,wmclwp,wmctwp,CDNC_TOMAS
 
 #endif
+#ifdef GCAP
+       use CLOUDS_COM, only : cldss3d
+       use CLOUDS,     only : taussl3d, cldssl3d
+#endif       
 #if (defined CLD_AER_CDNC) || (defined CLD_SUBDD)
        use CLOUDS, only : cteml,cd3dl,cl3dl,ci3dl
 #endif
@@ -203,6 +208,11 @@ subroutine CONDSE
   ! plume diagnostics
   use CLOUDS, only : CUMFLX,DWNFLX,WCUALL,ENTALL,DETALL, &
        MPLUMEALL,PLUME_MAX,PLUME_MIN
+#endif
+#ifdef GCAP
+  use CLOUDS, only : mc_up_mf, mc_dd_mf, mc_up_ent, mc_dd_ent, mc_up_det, mc_dd_det
+  use CLOUDS, only : mc_dqcond, mc_dqevap, ls_dqcond, ls_dqevap
+  use CLOUDS, only : mc_pflx_l, mc_pflx_i, ls_pflx_l, ls_pflx_i
 #endif
   use PBLCOM, only : dclev,egcm,w2gcm,pblht,pblptop
   use ATM_COM, only : pk,pek,pmid,pedn,gz,PMIDOLD,pdsig,MWs, &
@@ -293,10 +303,30 @@ subroutine CONDSE
     integer LMIN
 #endif
 
+#ifdef GCAP
+    real*8, &
+         dimension(GRID%I_STRT_HALO:GRID%I_STOP_HALO, &
+                   GRID%J_STRT_HALO:GRID%J_STOP_HALO,LM) :: &
+                   dtrain,         & ! Updraft detrainment flux in layer [kg/m2/s]
+                   dqrcu,          & ! Convective rainwater source in layer [kg/kg/s]
+                   dqrlsan,        & ! Stratiform rainwater source in layer [kg/kg/s] 
+                   reevapcn,       & ! Evap./subl. of convective precip in layer [kg/kg/s]
+                   reevapls          ! Evap./subl. of stratiform precip in layer [kg/kg/s]
+    real*8, &
+         dimension(GRID%I_STRT_HALO:GRID%I_STOP_HALO, &
+                   GRID%J_STRT_HALO:GRID%J_STOP_HALO,LM+1) :: &
+                   cmfmc,          & ! Upward cloud mass flux [kg/m2/s]                   
+                   pficu,          & ! Downward flux of convective ice precipitation [kg/m2/s]
+                   pflcu,          & ! Downward flux of convective liq precipitation [kg/m2/s]
+                   pfilsan,        & ! Downward flux of large-scale ice precipitation [kg/m2/s]
+                   pfllsan           ! Downward flux of large-scale liq precipitation [kg/m2/s]                   
+    integer LMIN
+#endif    
+
 #ifdef CACHED_SUBDD
 #ifdef TRACERS_WATER
    !tracer precipitation variable name
-   character(len=20) :: trpname
+   character(len=20) :: trpname 
 #endif
 #ifdef SCM
    !  isccp diagnostics   save frequency histogram for subdd diagnostics
@@ -541,8 +571,21 @@ subroutine CONDSE
       ! isccp frequency diags
       save_fq_isccp=0.d0
 #endif
+#ifdef GCAP
+      ! plume diagnostics
+      dtrain = 0.d0
+      dqrcu  = 0.d0
+      dqrlsan  = 0.d0
+      reevapcn = 0.d0
+      reevapls = 0.d0
+      cmfmc  = 0.d0
+      pficu    = 0.d0
+      pflcu    = 0.d0
+      pfilsan  = 0.d0
+      pfllsan  = 0.d0
 #endif
-
+#endif
+      
   call recalc_agrid_uv ! may not be necessary - check later
 
   !
@@ -625,7 +668,7 @@ subroutine CONDSE
      	       TUNE_LT_LAND, TUNE_LT_SEA
       !CALL STOP_MODEL( 'LTM Testing',17)
       FLASH_DENS = 0d0
-      CG_DENS    = 0d0
+      !CG_DENS    = 0d0
       FLASH_UNC  = 0d0
 #endif
 
@@ -890,7 +933,7 @@ subroutine CONDSE
 
 #if (defined CALCULATE_LIGHTNING) || (defined TRACERS_SPECIAL_Shindell)
       FLASH_DENS(i,j) = 0.d0 ! default for subdaily diag
-      CG_DENS(i,j)    = 0.d0 ! default for subdaily diag
+      CTH_SAVE(i,j)   = 0.d0 ! default for subdaily diag
 #ifdef AUTOTUNE_LIGHTNING
       FLASH_UNC(i,j)  = 0.d0 ! default
 #endif
@@ -1009,6 +1052,9 @@ subroutine CONDSE
             call inc_ajl(i,j,l,jl_mcdflx,DDMFLX(L))
             call inc_ajl(i,j,l,jl_csizmc,CSIZEL(L)*CLDMCL(L)*AIRM(L))
             aijl(i,j,l,ijl_MCamFX) = aijl(i,j,l,ijl_MCamFX) + MCFLX(L)
+#ifdef GCAP
+            CMFMC(i,j,l+1) = MCFLX(l) * 100 * bygrav * bydtsrc ! mb -> kg m-2 s-1
+#endif
           end do
           do IT=1,NTYPE
             call INC_AJ(I,J,IT,J_PRCPMC,PRCPMC*FTYPE(IT,I,J))
@@ -1177,6 +1223,26 @@ subroutine CONDSE
           mc_pl_min_p2(I,J,:) = PLUME_MIN(2,:)
         endif
 #endif
+#ifdef GCAP
+        ! plume diagnostics (kg/m2/s)
+
+        !---------------------
+        ! Mimic MERRA2
+        !---------------------
+
+        ! Upward moist convective flux across top edge [kg/m2/s]
+        cmfmc(I,J,:) = ( mc_up_mf(:,1) + mc_up_mf(:,2) ) ! - &
+                      ! ( mc_dd_mf(:,1) + mc_dd_mf(:,2) ) ! minus downdrafts
+        
+        ! Total detrainment flux in updrafts [kg/m2/s]
+        dtrain(I,J,:) = mc_up_det(:,1) + mc_up_det(:,2)
+                      ! & + mc_dd_det(:,1) + mc_dd_det(:,2) ! including downdraft entrainment
+
+        ! Condensation/evaporation rate from convective precipitation [kg/kg/s]
+        dqrcu(I,J,:)    = mc_dqcond(:,1) + mc_dqcond(:,2)! Includes all cloud bases and both types
+        reevapcn(I,J,:) = mc_dqevap(:,1) + mc_dqevap(:,2)
+        
+#endif
 #endif
 
 #ifdef TRACERS_ON
@@ -1324,7 +1390,15 @@ subroutine CONDSE
              Itime,I,J,LERR,' CONDSE:H2O<0',WMERR,' ->0'
 
         !**** Accumulate diagnostics of LSCOND
-
+#ifdef GCAP
+        !---------------------
+        ! Mimic MERRA2
+        !---------------------
+        ! Condensation/evaporation rate from large-scale precipitation [kg/kg/s]
+        dqrlsan(I,J,:)  = ls_dqcond(:)
+        reevapls(I,J,:) = ls_dqevap(:)
+#endif
+        
 #ifdef CLD_AER_CDNC
         ! code transplanted from LSCOND
         SMLWP=WMSUM
@@ -1395,6 +1469,14 @@ subroutine CONDSE
         end do
 #endif
 
+#ifdef GCAP
+        pflcu(i,j,:)   = mc_pflx_l(:) ! kg m-2 s-1
+        pfllsan(i,j,:) = ls_pflx_l(:) ! kg m-2 s-1
+        pficu(i,j,:)   = mc_pflx_i(:) ! kg m-2 s-1
+        pfilsan(i,j,:) = ls_pflx_i(:) ! kg m-2 s-1
+#endif
+        
+        
         !**** CALCULATE PRECIPITATION HEAT FLUX (FALLS AT 0 DEGREES CENTIGRADE)
         !**** NEED TO TAKE ACCOUNT OF LATENT HEAT THOUGH
         if (LHP(1).ne.LHS) then
@@ -1878,6 +1960,9 @@ subroutine CONDSE
 
         TAUSS(:,I,J)=TAUSSL(:)
         CLDSS(:,I,J)=CLDSSL(:)
+#ifdef GCAP
+        CLDSS3D(:,I,J)=CLDSSL3D(:)
+#endif
         CLDSAV(:,I,J)=CLDSAVL(:)
         CLDSAV1(:,I,J)=CLDSV1(:)
         SVLHX(:,I,J)=SVLHXL(:)
@@ -2437,6 +2522,46 @@ subroutine CONDSE
   case ('mc_lwp')
     call inc_subdd(subdd,k,cfmip_mc_lwp)
 #endif
+#if (defined CALCULATE_LIGHTNING) || (defined TRACERS_SPECIAL_Shindell) 
+  case( 'FLASH_DENS' )
+    do j=j_0,j_1; do i=i_0,imaxj(j)
+       sddarr(i,j) = FLASH_DENS(i,j)
+    enddo;        enddo
+    call inc_subdd(subdd,k,sddarr)
+  case( 'CTH' ) 
+    do j=j_0,j_1; do i=i_0,imaxj(j)
+       sddarr(i,j) = CTH_SAVE(i,j)
+    enddo;        enddo
+    call inc_subdd(subdd,k,sddarr)
+#endif
+#ifdef GCAP
+    case('PRECANV')
+       sddarr(:,:) = 0
+       call inc_subdd(subdd,k,sddarr)
+    case ('PRECCON') ! Normal mcp
+       do j=j_0,j_1; do i=i_0,imaxj(j)
+          sddarr(i,j) = max(0.,prec(i,j)-precss(i,j))*bydtsrc ! Convert kg/m2 -> kg/m2/s
+       enddo;        enddo
+       call inc_subdd(subdd,k,sddarr)
+    case( 'PRECLSC' )
+       do j=j_0,j_1; do i=i_0,imaxj(j)
+          sddarr(i,j) = precss(i,j)*bydtsrc ! Convert kg/m2 -> kg/m2/s
+       enddo;        enddo
+       call inc_subdd(subdd,k,sddarr)       
+    case( 'PRECSNO' )
+       sddarr(:,:) = 0
+       do j=j_0,j_1; do i=i_0,imaxj(j)
+         if(eprec(i,j).ge.0.) then
+           sddarr(i,j) = 0.
+         else
+           sddarr(i,j) = prec(i,j)
+         endif
+       enddo;        enddo
+       call inc_subdd(subdd,k,sddarr)       
+    case( 'PRECTOT' ) ! Based on prec
+       sddarr = prec * bydtsrc ! Convert kg/m2 -> kg/m2/s
+       call inc_subdd(subdd,k,sddarr)       
+#endif
   end select
   enddo
   enddo
@@ -2457,6 +2582,12 @@ subroutine CONDSE
 #ifdef CFMIP3_SUBDD
   case ('mcamfx')
     call inc_subdd(subdd,k,cfmip_mcamfx)
+#endif
+#ifdef GCAP
+  case ('QL')
+    call inc_subdd(subdd,k,qcl)
+  case ('QI')
+    call inc_subdd(subdd,k,qci)
 #endif
   end select
   enddo
@@ -2553,7 +2684,7 @@ subroutine CONDSE
         if(trpname.eq.trim(subdd%name(k))) then
           call inc_subdd(subdd,k,trprec(n,:,:))
           exit ntm_loop
-        end if
+        end if 
       end do ntm_loop
     end do !subdd diagnostics/variables
   end do   !subdd groups
@@ -2603,11 +2734,50 @@ subroutine CONDSE
   endif
 #endif
 
+#ifdef GCAP
+  ! Plume diagnostics in aijl file
+  call find_groups('aijlh',grpids,ngroups)
+  do igrp=1,ngroups
+     subdd => subdd_groups(grpids(igrp))
+     do k=1,subdd%ndiags
+        select case (subdd%name(k))
+        case ('DTRAIN')
+           call inc_subdd(subdd,k,        dtrain )           
+        case ('DQRCU')
+           call inc_subdd(subdd,k,         dqrcu )
+        case ('DQRLSAN')
+           call inc_subdd(subdd,k,       dqrlsan )
+        case ('REEVAPCN')
+           call inc_subdd(subdd,k,      reevapcn )
+        case ('REEVAPLS')
+           call inc_subdd(subdd,k,      reevapls )
+        end select
+     enddo
+  enddo
+  call find_groups('aijleh',grpids,ngroups)
+  do igrp=1,ngroups
+     subdd => subdd_groups(grpids(igrp))
+     do k=1,subdd%ndiags
+        select case (subdd%name(k))
+        case ('CMFMC')
+           call inc_subdd(subdd,k,         cmfmc )
+        case ('PFLCU')
+           call inc_subdd(subdd,k,         pflcu )
+        case ('PFLLSAN')
+           call inc_subdd(subdd,k,       pfllsan )
+        case ('PFICU')
+           call inc_subdd(subdd,k,         pficu )
+        case ('PFILSAN')
+           call inc_subdd(subdd,k,       pfilsan )
+        end select
+     enddo
+  enddo
 #endif
-
+#endif
+    
 #if (defined CALCULATE_LIGHTNING) || (defined TRACERS_SPECIAL_Shindell)
 #ifdef AUTOTUNE_LIGHTNING
-      CALL GLOBALSUM( grid, FLASH_UNC*(FOCEAN), SEA_FR_UNC(1), ALL=.true. )
+      CALL GLOBALSUM( grid, FLASH_UNC*(FOCEAN), SEA_FR_UNC(1), ALL=.true. ) 
       CALL GLOBALSUM( grid, FLASH_UNC*(1d0-FOCEAN), LAND_FR_UNC(1), ALL=.true. )
       CNT_FR(1) = 1
 #endif

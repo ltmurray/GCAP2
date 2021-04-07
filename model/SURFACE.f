@@ -1326,6 +1326,68 @@ C
         enddo;        enddo
         call inc_subdd(subdd,k,sddarr2d)
 C
+#ifdef GCAP
+      case ('FRSEAICE')
+        ! Based on FOICE
+        sddarr2d(:,:)=RSI(:,:)*FOCEAN(:,:)
+        call inc_subdd(subdd,k,sddarr2d)
+      case ('FRSNO') ! Fraction of snow cover, not including land ice sheets or ocean ice
+         do j=j_0,j_1; do i=i_0,imaxj(j)
+            xsubdd = 0.
+            ! Fraction of lake ice
+            if( snowi(i,j) > 0. )
+     &         xsubdd = xsubdd+rsi(i,j)*flake(i,j)
+            ! Fraction of land with snow cover
+            if( atmlnd%SNOWE(i,j) > 0. )
+     &           xsubdd = xsubdd + atmlnd%snowfr(i,j)*fearth(i,j)
+            xsubdd = min(1.0,xsubdd)
+            sddarr2d(i,j) = xsubdd
+         enddo;        enddo
+         call inc_subdd(subdd,k,sddarr2d)
+      case ('LWI')
+         ! 0 = Ocean + Caspian Sea (in MERRA2, at least)
+         ! 1 = Land + Lakes
+         ! 2 = Ocean Ice
+         sddarr2d(:,:) = 1
+         do j=j_0,j_1; do i=i_0,imaxj(j)
+            if ( focean(i,j) > fearth(i,j) ) sddarr2d(i,j) = 0
+            if ( rsi(i,j)*focean(i,j) > 0.5 ) sddarr2d(i,j) = 2
+         enddo;        enddo
+         call inc_subdd(subdd,k,sddarr2d)
+      case ('TS') ! gtempr
+        do j=j_0,j_1; do i=i_0,imaxj(j)
+          sddarr2d(i,j) = atmsrf%gtempr(i,j)
+        enddo;        enddo
+        call inc_subdd(subdd,k,sddarr2d)
+      case ('T2M')              ! tsavg + 273.15         
+        sddarr2d = atmsrf%tsavg(:,:)-tf+273.15
+        call inc_subdd(subdd,k,sddarr2d)
+      case ('QV2M')        
+        sddarr2d = atmsrf%qsavg(:,:)
+        call inc_subdd(subdd,k,sddarr2d)
+      case ('U10M') ! us
+        sddarr2d = atmsrf%usavg
+        call inc_subdd(subdd,k,sddarr2d)
+      case ('USTAR') ! ustar
+         do j=j_0,j_1; do i=i_0,imaxj(j)
+            sddarr2d(i,j) = atmsrf%ustar_pbl(i,j)
+         enddo;        enddo
+         call inc_subdd(subdd,k,sddarr2d)        
+      case ('V10M') ! vs
+        sddarr2d = atmsrf%vsavg
+        call inc_subdd(subdd,k,sddarr2d)
+      case ( 'SNODP' )
+         sddarr2d(:,:) = 0.
+         ! atmsrf%SNOWDP = Snow thickness (m) over all layers
+         do j=j_0,j_1; do i=i_0,imaxj(j)
+            ! MERRA-2 has SNODP = 0 over ice sheets
+            sddarr2d(i,j) = atmsrf%SNOWDP(I,J) * ( 1d0 - flice(I,J) )
+         enddo;        enddo         
+         call inc_subdd(subdd,k,sddarr2d)
+      case ( 'SNOMAS' ) ! Total snow storage over land (kg m-2)
+         sddarr2d = atmsrf%SNOW   
+         call inc_subdd(subdd,k,sddarr2d)
+#endif
       end select
       enddo
       enddo

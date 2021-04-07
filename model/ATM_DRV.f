@@ -858,6 +858,9 @@ c for now, CREATE_CAP is only relevant to the cubed sphere grid
 #ifdef BIOGENIC_EMISSIONS
       call alloc_biogenic_emis(grid)
 #endif
+#if (defined CALCULATE_LIGHTNING) || (defined TRACERS_SPECIAL_Shindell)
+      call alloc_lightning(grid)
+#endif
 #if (defined TRACERS_ON) || (defined TRACERS_OCEAN) || (defined TRACERS_WATER)
       call alloc_tracer_com(grid)
 #ifdef TRACERS_DRYDEP
@@ -866,9 +869,6 @@ c for now, CREATE_CAP is only relevant to the cubed sphere grid
 #ifdef TRACERS_SPECIAL_Lerner
       call alloc_tracer_special_lerner_com(grid)
       call alloc_linoz_chem_com(grid)
-#endif
-#if (defined CALCULATE_LIGHTNING) || (defined TRACERS_SPECIAL_Shindell)
-      call alloc_lightning(grid)
 #endif
 #ifdef TRACERS_SPECIAL_Shindell
       call alloc_trchem_shindell_com(grid)
@@ -1727,6 +1727,10 @@ C**** interpolate to pressure levels and accumulate the subdd diagnostics
       use atm_com,    only: u,v,t,q,qcl,qci, pdsig,pmid,pedn,pk,
      &                      ualij,valij, zatmo,gz, wsave, ma,masum
      &                     ,ptropo,ltropo
+#ifdef GCAP
+      use atm_com,    only : MWs
+      use geom,       only : byaxyp 
+#endif
       use domain_decomp_atm, only : grid,get=>getdomainbounds
       use resolution, only : lm,mtop
       USE GEOM, only: imaxj
@@ -1845,6 +1849,29 @@ C
           sddarr2d(i,j) = t(i,j,ltropo(i,j))*pk(ltropo(i,j),i,j)
         enddo;        enddo
         call inc_subdd(subdd,k,sddarr2d)
+
+#ifdef GCAP
+      case ('HFLUX') ! Based on shflux
+        sddarr2d = -atmsrf%sensht(:,:)/dtsrc ! Note: sign change for consistency with MERRA-2
+        call inc_subdd(subdd,k,sddarr2d)
+      case ('EFLUX')
+        sddarr2d = -atmsrf%latht(:,:)/dtsrc  ! Note: sign change for consistency with MERRA-2
+        call inc_subdd(subdd,k,sddarr2d)
+      case ('SLP')
+         do j=j_0,j_1; do i=i_0,imaxj(j)
+            sddarr2d(i,j) =
+     &        slp(pedn(1,i,j),atmsrf%tsavg(i,j),bygrav*zatmo(i,j))*100. ! Convert to Pa
+         enddo;        enddo
+         call inc_subdd(subdd,k,sddarr2d)
+      case ('PBLH')
+         call inc_subdd(subdd,k,atmsrf%dblavg)
+      case( 'TROPPT' )
+         call inc_subdd(subdd,k,ptropo*100) ! Convert to Pa
+      case ('PS')
+        sddarr2d = pedn(1,:,:)*100. ! Convert to Pa
+        call inc_subdd(subdd,k,sddarr2d)         
+#endif
+        
       end select
       enddo
       enddo
@@ -1951,6 +1978,34 @@ C**** cached_subdd on model levels
         sddarr(:,:,1:lm-1) = wsave
         sddarr(:,:,lm) = 0.
         call inc_subdd(subdd,k,sddarr)
+#ifdef GCAP
+      case ('T')
+        do l=1,lmaxsubdd; do j=j_0,j_1; do i=i_0,imaxj(j)
+          sddarr(i,j,l) = t(i,j,l)*pk(l,i,j)
+        enddo;              enddo;        enddo
+        call inc_subdd(subdd,k,sddarr)
+      case ('QV')
+        call inc_subdd(subdd,k,q)
+      case ('OMEGA')
+!     Downward pressure velocity
+!**** omega(Pa/s) = MWs(mb*m^2) * byAXYP(1/m^2) * 100(Pa/mb) / DTSRC(s)
+        sddarr(:,:,:) = 0
+        do l=1,lmaxsubdd; do j=j_0,j_1; do i=i_0,imaxj(j)
+           sddarr(i,j,l) = MWs(I,J,L)*byaxyp(I,J)*100/DTSRC
+        enddo;              enddo;        enddo         
+        call inc_subdd(subdd,k,sddarr)
+      case ('RH')
+        do l=1,lmaxsubdd; do j=j_0,j_1; do i=i_0,imaxj(j)
+          sddarr(i,j,l) = 
+     &    q(i,j,l)/QSAT(t(i,j,l)*pk(l,i,j),LHE,pmid(l,i,j)) ! Leave as fraction
+        enddo;              enddo;        enddo
+        call inc_subdd(subdd,k,sddarr)
+      case ('U')
+        call inc_subdd(subdd,k,ualij,jdim=3)
+      case ('V')
+        call inc_subdd(subdd,k,valij,jdim=3)         
+#endif
+
       end select
       enddo
       enddo

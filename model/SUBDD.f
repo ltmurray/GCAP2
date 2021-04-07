@@ -17,7 +17,7 @@
 !@+      II. outputs whose registration is deferred until the stage
 !@+          of model execution at which the first time-slice of the
 !@+          output data is saved/accumulated.
-!@+
+!@+     
 !@+     The type II interface is intended for outputs that do not
 !@+     naturally fall into one of the pre-existing categories of
 !@+     type I, and for which the creation of a new category
@@ -31,7 +31,7 @@
 !@+     parameters.  Automatic vertical regridding of outputs to
 !@+     constant-pressure levels is currently only possible via I
 !@+     (will be added to II soon).
-!@+
+!@+     
 !@+     Requests for type I outputs are made through rundeck
 !@+     strings SUBDD, SUBDD1, ..., following the traditional
 !@+     subdaily diagnostics framework.  However, the parsing
@@ -487,6 +487,8 @@ c
           endif
           call inc_subdd_alijh(subdd,k,arr)
         endif
+      case ('aijleh' )
+        call inc_subdd_aijleh(subdd,k,arr)
       case ('aijph')
         if(jdim_ .eq. 2) then
           if(subdd%dsize3_input.eq.sizes(3)) then
@@ -534,6 +536,30 @@ c
       enddo
       return
       end subroutine inc_subdd_aijlh
+
+      subroutine inc_subdd_aijleh(subdd,k,arr)
+      use domain_decomp_atm, only : grid
+      use geom, only : imaxj
+      implicit none
+      type(subdd_type) :: subdd
+      integer :: k
+      real*8, dimension(grid%i_strt_halo:grid%i_stop_halo,
+     &                  grid%j_strt_halo:grid%j_stop_halo,
+     &                  subdd%dsize3_input) ::
+     &     arr
+c
+      integer :: i,j,l,ip
+c
+      ip = subdd%subdd_period
+      do l=1,size(subdd%v5d,3)
+      do j=grid%j_strt,grid%j_stop
+      do i=grid%i_strt,imaxj(j)
+        subdd%v5d(i,j,l,ip,k) = subdd%v5d(i,j,l,ip,k) + arr(i,j,l)
+      enddo
+      enddo
+      enddo
+      return
+      end subroutine inc_subdd_aijleh
 
       subroutine inc_subdd_alijh(subdd,k,arr)
       use domain_decomp_atm, only : grid
@@ -1224,18 +1250,75 @@ c
      &         'dist_im,dist_jm,lm_'//trim(grpname)//
      &         ',nperiod_'//trim(grpname)
         endif
+#ifdef GCAP
+#ifdef CUBED_SPHERE
+        subdd%tile_dim_out = 4
+        dimstr='(time,tile,lev,y,x) ;'
+#else
+        dimstr='(time,lev,lat,lon) ;'
+#endif
+#else
 #ifdef CUBED_SPHERE
         subdd%tile_dim_out = 4
         dimstr='(time,tile,level,y,x) ;'
 #else
         dimstr='(time,level,lat,lon) ;'
 #endif
+#endif
         allocate(lvlarr(dsize3))
         do l=1,dsize3
           lvlarr(l) = l
         enddo
+#ifdef GCAP
+        call add_coord(subdd%cdl0,'lev',size(lvlarr),
+     &       long_name="levels",
+     &       units = "1",
+     &       coordvalues=lvlarr)
+#else
         call add_coord(subdd%cdl0,'level',size(lvlarr),
      &       coordvalues=lvlarr)
+#endif
+        deallocate(lvlarr)
+
+      case('aijleh' )
+        if(catshape.eq.'aijleh') then
+          dsize3 = lmaxsubdd+1
+          subdd%accshape =
+     &       'dist_im,dist_jm,lmaxsubdd+1,nperiod_'//trim(grpname)
+        else
+          dsize3 = dsize3_input
+          subdd%accshape =
+     &         'dist_im,dist_jm,lm_'//trim(grpname)//
+     &         ',nperiod_'//trim(grpname)
+        endif
+#ifdef GCAP
+#ifdef CUBED_SPHERE
+        subdd%tile_dim_out = 4
+        dimstr='(time,tile,lev,y,x) ;'
+#else
+        dimstr='(time,lev,lat,lon) ;'
+#endif
+#else
+#ifdef CUBED_SPHERE
+        subdd%tile_dim_out = 4
+        dimstr='(time,tile,level,y,x) ;'
+#else
+        dimstr='(time,level,lat,lon) ;'
+#endif
+#endif
+        allocate(lvlarr(dsize3))
+        do l=1,dsize3
+          lvlarr(l) = l
+        enddo
+#ifdef GCAP
+        call add_coord(subdd%cdl0,'lev',size(lvlarr),
+     &       long_name="levels",
+     &       units = "1",
+     &       coordvalues=lvlarr)
+#else
+        call add_coord(subdd%cdl0,'level',size(lvlarr),
+     &       coordvalues=lvlarr)
+#endif
         deallocate(lvlarr)
 
       case('aijph')
@@ -1367,7 +1450,7 @@ c
       allocate(subdd%name(ndiags))
       allocate(subdd%denom(ndiags))
       subdd%scale(:) = 1.
-
+      
       subdd%name(1) = vname
       subdd%reduc(:) = reduc_avg
       subdd%denom(:) = 0
@@ -1376,7 +1459,7 @@ c
       subdd%is_inst = is_inst
 
       if(is_inst) then
-        subdd%sched(:) = sched_inst
+        subdd%sched(:) = sched_inst        
       else
         subdd%sched(:) = sched_src
       endif
@@ -1583,6 +1666,11 @@ c add (calls to) the analogs of ijh_defs et al.
       catshapes(k) = 'aijlh'; categories(k) = 'aijlh'
       input_sizes3(k) = lm
       call ijlh_defs(diaglists(1,k),nmax_possible,diaglens(k))
+
+      k = k + 1
+      catshapes(k) = 'aijleh'; categories(k) = 'aijleh'
+      input_sizes3(k) = lm+1
+      call ijleh_defs(diaglists(1,k),nmax_possible,diaglens(k))
 
       k = k + 1
       catshapes(k) = 'aijh'; categories(k) = 'rijh'
@@ -1846,7 +1934,7 @@ c
      &  scale = real(nday,kind=8)
      &     )
 c
-      arr(next()) = info_type_(
+      arr(next()) = info_type_(        
      &  sname = 'evap',
      &  lname = 'EVAPORATION',
      &  units = 'mm/day',
@@ -1982,7 +2070,7 @@ c
      &     )
 c
       arr(next()) = info_type_(
-     &  sname = 'FLOPN',
+     &  sname = 'FLOPN', 
      &  lname = 'Ice-Free Land Cover',
      &  units = 'fraction'
      &     )
@@ -2216,32 +2304,32 @@ c
      &  sname = 'r_w_mc',
      &  lname = 'Warm-Cloud effective Radius convective',
      &  units = 'um'
-     &     )
+     &     )    
 c
       arr(next()) = info_type_(
      &  sname = 'r_i_mc',
      &  lname = 'Ice-Cloud effective Radius convective',
      &  units = 'um'
-     &     )
+     &     )    
 c
       arr(next()) = info_type_(
      &  sname = 'r_w_ls',
      &  lname = 'Warm-Cloud effective Radius Large Scale',
      &  units = 'um'
-     &     )
+     &     )    
 c
       arr(next()) = info_type_(
      &  sname = 'r_i_ls',
      &  lname = 'Ice-Cloud effective Radius Large scale',
      &  units = 'um'
-     &     )
+     &     )    
 c
       arr(next()) = info_type_(
      &  sname = 'pn',
      &  lname = 'Number Concentration of dg > 0.1 um',
      &  units = '#/m^2'
      &     )
-c
+c 
       arr(next()) = info_type_(
      &  sname = 'apn',
      &  lname = 'Activated Particles Number Concentration',
@@ -2259,6 +2347,255 @@ c
      &  lname = 'Tropopause temperature',
      &  units = 'K'
      &     )
+c
+      arr(next()) = info_type_(
+     &  sname = 'FLASH_DENS',
+     &  lname = 'Lightning flash density',
+     &  units = 'km-2 s-1'
+     &     )
+c     
+      arr(next()) = info_type_(
+     &  sname = 'CTH',
+     &  lname = 'Convective cloud depth',
+     &  units = 'm'
+     &     )
+c
+#ifdef GCAP
+      arr(next()) = info_type_(
+     &  sname = 'PS',
+     &  lname = 'surface_pressure',
+     &  units = 'Pa'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'FRSEAICE',
+     &  lname = 'ice_covered_fraction_of_tile',
+     &  units = '1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'FRSNO',
+     &  lname = 'fractional_area_of_land_snowcover',
+     &  units = '1'
+     &     )      
+      arr(next()) = info_type_(
+     &  sname = 'GWETTOP',
+     &  lname = 'surface_soil_wetness',
+     &  units = '1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'GWETROOT',
+     &  lname = 'root_zone_soil_wetness',
+     &  units = '1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'HFLUX',
+     &  lname = 'sensible_heat_flux_from_turbulence',
+     &  units = 'W m-2'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'EFLUX',
+     &  lname = 'total_latent_heat_flux',
+     &  units = 'W m-2'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'LAI',
+     &  lname = 'leaf_area_index',
+     &  units = '1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'LWI',
+     &  lname = 'land_water_ice_flags',
+     &  units = '1'
+     &     )      
+      arr(next()) = info_type_(
+     &  sname = 'PBLH',
+     &  lname = 'planetary_boundary_layer_height',
+     &  units = 'm'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'PRECANV',
+     &  lname = 'anvil_precipitation',
+     &  units = 'kg m-2 s-1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'PRECCON',
+     &  lname = 'convective_precipitation',
+     &  units = 'kg m-2 s-1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'PRECLSC',
+     &  lname = 'nonanvil_large_scale_precipitation',
+     &  units = 'kg m-2 s-1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'PRECSNO',
+     &  lname = 'snowfall',
+     &  units = 'kg m-2 s-1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'PRECTOT',
+     &  lname = 'total_precipitation',
+     &  units = 'kg m-2 s-1'
+     &     )
+      
+      arr(next()) = info_type_(
+     &  sname = 'QV2M',
+     &  lname = '2-meter_specific_humidity',
+     &  units = 'kg kg-1'
+     &     )
+!      arr(next()) = info_type_(
+!     &  sname = 'SEAICE00',
+!     &  lname = 'sea_ice_area_fraction_0-10%',
+!     &  units = '1'
+!     &     )
+!      arr(next()) = info_type_(
+!     &  sname = 'SEAICE10',
+!     &  lname = 'sea_ice_area_fraction_10-20%',
+!     &  units = '1'
+!     &     )
+!      arr(next()) = info_type_(
+!     &  sname = 'SEAICE20',
+!     &  lname = 'sea_ice_area_fraction_20-30%',
+!     &  units = '1'
+!     &     )
+!      arr(next()) = info_type_(
+!     &  sname = 'SEAICE30',
+!     &  lname = 'sea_ice_area_fraction_30-40%',
+!     &  units = '1'
+!     &     )
+!      arr(next()) = info_type_(
+!     &  sname = 'SEAICE40',
+!     &  lname = 'sea_ice_area_fraction_40-50%',
+!     &  units = '1'
+!     &     )
+!      arr(next()) = info_type_(
+!     &  sname = 'SEAICE50',
+!     &  lname = 'sea_ice_area_fraction_50-60%',
+!     &  units = '1'
+!     &     )
+!      arr(next()) = info_type_(
+!     &  sname = 'SEAICE60',
+!     &  lname = 'sea_ice_area_fraction_60-70%',
+!     &  units = '1'
+!     &     )
+!      arr(next()) = info_type_(
+!     &  sname = 'SEAICE70',
+!     &  lname = 'sea_ice_area_fraction_70-80%',
+!     &  units = '1'
+!     &     )
+!      arr(next()) = info_type_(
+!     &  sname = 'SEAICE80',
+!     &  lname = 'sea_ice_area_fraction_80-90%',
+!     &  units = '1'
+!     &     )
+!      arr(next()) = info_type_(
+!     &  sname = 'SEAICE90',
+!     &  lname = 'sea_ice_area_fraction_90-100%',
+!     &  units = '1'
+!     &     )
+      arr(next()) = info_type_(
+     &  sname = 'SLP',
+     &  lname = 'sea_level_pressure',
+     &  units = 'Pa'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'SNODP',
+     &  lname = 'snow_depth',
+     &  units = 'm'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'SNOMAS',
+     &  lname = 'Total_snow_storage_land',
+     &  units = 'kg m-2'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'TROPPT',
+     &  lname = 'tropopause_pressure_based_on_thermal_estimate',
+     &  units = 'Pa'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'TS',
+     &  lname = 'surface_skin_temperature',
+     &  units = 'K'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'T2M',
+     &  lname = '2-meter_air_temperature',
+     &  units = 'K'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'U10M',
+     &  lname = '10-meter_eastward_wind',
+     &  units = 'm s-1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'USTAR',
+     &  lname = 'surface_velocity_scale',
+     &  units = 'm s-1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'V10M',
+     &  lname = '10-meter_northward_wind',
+     &  units = 'm s-1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'Z0M',
+     &  lname = 'surface_roughness',
+     &  units = 'm'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'T10M',
+     &  lname = '10-meter_air_temperature',
+     &  units = 'K'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'Q850',
+     &  lname = 'specific_humidity_at_850_hPa',
+     &  units = 'kg kg-1'
+     &     )
+
+! Rad scheduled diagnostics
+      arr(next()) = info_type_(
+     &  sname = 'ALBEDO',
+     &  lname = 'surface_albedo',
+     &  units = '1',
+     &  sched = sched_rad
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'CLDTOT',
+     &  lname = 'total_cloud_area_fraction',
+     &  units = '1',
+     &  sched = sched_rad
+     &     )
+c      
+!     EFLUX not used
+c
+!     EVAP not used
+      arr(next()) = info_type_(
+     &  sname = 'PARDF',
+     &  lname = 'surface_downwelling_par_diffuse_flux',
+     &  units = 'W/m^2',
+     &  sched = sched_rad
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'PARDR',
+     &  lname = 'surface_downwelling_par_beam_flux',
+     &  units = 'W/m^2',
+     &  sched = sched_rad
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'SWGDN',
+     &  lname = 'surface_incoming_shortwave_flux',
+     &  units = 'W m-2',
+     &  sched = sched_rad      
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'TO3',
+     &  lname = 'total_column_ozone',
+     &  units = 'Dobsons',
+     &  sched = sched_rad      
+     &     )      
+#endif
+      
       return
       contains
       integer function next()
@@ -2354,7 +2691,7 @@ c
      &   lname = 'Raw model HDO',
      &   units = 'kg/kg'
      &     )
-
+     
       arr(next()) = info_type_(
      &   sname = 'H2ORaw',
      &   lname = 'Raw model H2O',
@@ -2399,7 +2736,7 @@ c
      & dname = 'nTESGoodR',
      & units = 'kg/kg'
      &     )
-
+   
       arr(next()) = info_type_(
      & sname = 'H2OR',
      & lname = 'H2O from retrieval-based TES operator',
@@ -2649,11 +2986,102 @@ c
      &  units = 'cm-3'
      &     )
 #ifdef CFMIP3_SUBDD
-       arr(next()) = info_type_(
+      arr(next()) = info_type_(
      &  sname = 'mcamfx',
      &  lname = 'MC Air Mass Flux',
      &  units = 'kg/s',
      &  scale = 100.*bygrav/dtsrc
+     &     )
+#endif
+#ifdef GCAP
+      arr(next()) = info_type_(
+     &  sname = 'T',
+     &  lname = 'air_temperature',
+     &  units = 'K'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'QV',
+     &  lname = 'specific_humidity',
+     &  units = 'kg kg-1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'DTRAIN',
+     &  lname = 'detraining_mass_flux',
+     &  units = 'kg m-s s-1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'OMEGA',
+     &  lname = 'vertical_pressure_velocity',
+     &  units = 'Pa s-1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'RH',
+     &  lname = 'relative_humidity_after_moist',
+     &  units = '1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'U',
+     &  lname = 'eastward_wind',
+     &  units = 'm s-1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'V',
+     &  lname = 'northward_wind',
+     &  units = 'm s-1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'CLOUD',
+     &  lname = 'cloud_fraction_for_radiation',
+     &  units = '1',
+     &  sched = sched_rad      
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'OPTDEPTH',
+     &  lname = 'in_cloud_optical_thickness',
+     &  units = '1',
+     &  sched = sched_rad      
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'QI',
+     &  lname = 'mass_fraction_of_cloud_ice_water',
+     &  units = 'kg kg-1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'QL',
+     &  lname = 'mass_fraction_of_cloud_liquid_water',
+     &  units = 'kg kg-1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'TAUCLI',
+     &  lname = 'in_cloud_optical_thickness_for_ice_clouds',
+     &  units = '1',
+     &  sched = sched_rad      
+     &     )      
+      arr(next()) = info_type_(
+     &  sname = 'TAUCLW',
+     &  lname = 'in_cloud_optical_thickness_for_liquid_clouds',
+     &  units = '1',
+     &  sched = sched_rad      
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'DQRCU',
+     &  lname = 'convective_rainwater_source', 
+     &  units = 'kg kg-1 s-1' ! per grid-cell dry air
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'DQRLSAN',
+     &  lname = 'large_scale_rainwater_source',
+     &  units = 'kg kg-1 s-1' ! per grid-cell dry air
+     &     )      
+      arr(next()) = info_type_(
+     &  sname = 'REEVAPCN',
+     &  lname = 'evap_subl_of_convective_precipitation',
+     &  units = 'kg kg-1 s-1' ! per grid-cell dry air
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'REEVAPLS',
+     &  lname = 'evap_subl_of_non_convective_precipitation',
+     &  units = 'kg kg-1 s-1' ! per grid-cell dry air
      &     )
 #endif
       return
@@ -2664,6 +3092,58 @@ c
       end function next
       end subroutine ijlh_defs
 
+      subroutine ijleh_defs(arr,nmax,decl_count)
+c
+c 3D model-level edge outputs
+c
+      use subdd_mod, only : info_type,sched_rad
+! info_type_ is a homemade structure constructor for older compilers
+      use subdd_mod, only : info_type_
+      use constant, only : bygrav,kapa
+      implicit none
+      integer :: nmax,decl_count
+      type(info_type) :: arr(nmax)
+c
+c note: next() is a locally declared function to increment decl_count
+c
+
+      decl_count = 0
+
+#ifdef GCAP
+      arr(next()) = info_type_(
+     &  sname = 'CMFMC',
+     &  lname = 'cumulative_mass_flux',
+     &  units = 'kg m-2 s-1'
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'PFICU',
+     &  lname = '3D_flux_of_ice_convective_precipitation',
+     &  units = 'kg m-2 s-1' 
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'PFILSAN',
+     &  lname = '3D_flux_of_ice_nonconvective_precipitation',
+     &  units = 'kg m-2 s-1' 
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'PFLCU',
+     &  lname = '3D_flux_of_liquid_convective_precipitation',
+     &  units = 'kg m-2 s-1' 
+     &     )
+      arr(next()) = info_type_(
+     &  sname = 'PFLLSAN',
+     &  lname = '3D_flux_of_liquid_nonconvective_precipitation',
+     &  units = 'kg m-2 s-1' 
+     &     )
+#endif
+      
+      return
+      contains
+      integer function next()
+      decl_count = decl_count + 1
+      next = decl_count
+      end function next
+      end subroutine ijleh_defs
 
       subroutine get_subdd_vinterp_coeffs
       use geom, only : imaxj
@@ -3279,18 +3759,18 @@ c
      &     rsf_equals_db_int('lmaxsubdd')
      &     /)
       if(all(do_read)) then
-        do n=1,subdd_ngroups
-          grpname = subdd_groups(n)%grpname
-          call read_data(grid,fid,'nacc_'//trim(grpname),
-     &         subdd_groups(n)%nacc, bcast_all=.true.)
-          if(allocated(subdd_groups(n)%v4d)) then
-            call read_dist_data(grid,fid,trim(grpname),
-     &           subdd_groups(n)%v4d)
-          elseif(allocated(subdd_groups(n)%v5d)) then
-            call read_dist_data(grid,fid,trim(grpname),
-     &           subdd_groups(n)%v5d)
-          endif
-        enddo
+      do n=1,subdd_ngroups
+        grpname = subdd_groups(n)%grpname
+        call read_data(grid,fid,'nacc_'//trim(grpname),
+     &       subdd_groups(n)%nacc, bcast_all=.true.)
+        if(allocated(subdd_groups(n)%v4d)) then
+          call read_dist_data(grid,fid,trim(grpname),
+     &         subdd_groups(n)%v4d)
+        elseif(allocated(subdd_groups(n)%v5d)) then
+          call read_dist_data(grid,fid,trim(grpname),
+     &         subdd_groups(n)%v5d)
+        endif
+      enddo
       else
         if(am_i_root()) then
           write(6,*) 'WARNING: skipping rsf read of subdd info '//
