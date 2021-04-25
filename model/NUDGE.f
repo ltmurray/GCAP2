@@ -304,8 +304,8 @@ c******************************************************************
      &          varo(i,j-1,lo+1)==sngl(undef))    
      &          call stop_model('undefined wind in vinterana2mod',13)
 #endif
-                varn(i,j,ln)=((varo(i,j-1,lo) * dp1)
-     &               + (varo(i,j-1,lo+1) *dp2)) / (dp1 + dp2)
+                varn(i,j,ln)=((varo(i,j-1,lo) * dp2)
+     &               + (varo(i,j-1,lo+1) *dp1)) / (dp1 + dp2)
               else
                 lo=lo+1
                 if(lo==lmo)call stop_model(
